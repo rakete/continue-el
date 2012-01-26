@@ -335,7 +335,7 @@ sourcemarker have partly changed in the file."
 (defvar continue-db-filename "~/.continue-db")
 
 (defvar continue-db-ignore '("\.recentf"
-                             "/home/lazor/\.mk-project/"))
+                             ".*/\.mk-project/"))
 
 ;; (dolist (buf (buffer-list))
 ;;   (when (buffer-file-name buf)
@@ -385,6 +385,6 @@ sourcemarker have partly changed in the file."
      (add-hook 'find-file-hook 'continue-restore)
      (add-hook 'after-save-hook 'continue-save)
      ;; (add-hook 'kill-buffer-hook 'continue-save)
-     )
+     ))
 
 (provide 'continue)
