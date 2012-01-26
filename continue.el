@@ -367,6 +367,7 @@ sourcemarker have partly changed in the file."
             (puthash filename (continue-sourcemarker-create) continue-db)))))))
 
 (defun continue-restore (&optional filename)
+  (interactive)
   (let ((buf (or (and filename
                       (find-file-noselect filename))
                  (current-buffer))))
@@ -379,8 +380,11 @@ sourcemarker have partly changed in the file."
 
 (eval-after-load "continue"
   '(progn
+     (continue-load-db)
      (add-hook 'kill-emacs-hook 'continue-write-db)
      (add-hook 'find-file-hook 'continue-restore)
-     (add-hook 'after-save-hook 'continue-save)))
+     (add-hook 'after-save-hook 'continue-save)
+     ;; (add-hook 'kill-buffer-hook 'continue-save)
+     )
 
 (provide 'continue)
