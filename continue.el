@@ -483,13 +483,14 @@ sourcemarker have partly changed in the file."
 (defun continue-save (&optional buf)
   (interactive)
   (save-window-excursion
-    (let* ((buf (or buf (current-buffer)))
-           (filename (buffer-file-name buf)))
-      (when filename
-        (unless (and (buffer-file-name buf)
-                     (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
-          (with-current-buffer buf
-            (puthash filename (continue-sourcemarker-create) continue-db)))))))
+    (save-restriction
+      (let* ((buf (or buf (current-buffer)))
+             (filename (buffer-file-name buf)))
+        (when filename
+          (unless (and (buffer-file-name buf)
+                       (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
+            (with-current-buffer buf
+              (puthash filename (continue-sourcemarker-create) continue-db))))))))
 
 (defun continue-restore (&optional filename)
   (interactive)
