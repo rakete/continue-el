@@ -401,7 +401,7 @@ sourcemarker have partly changed in the file."
                           (mapcar (lambda (l) (goto-line l) (FM-string-to-char-list (buffer-substring (point-at-bol) (point-at-eol)))) matches))
                         (continue-buffer-string-to-fuzzy-char-lists "\n")))
              (numbered-lines (continue-zip (or matches
-                                              (loop for i from 1 to (length lines) collect i)) lines))
+                                               (loop for i from 1 to (length lines) collect i)) lines))
              (point (cdr (assoc :point smarker)))
              (string (FM-string-to-char-list (or str
                                                  (cdr (assoc :lines-center smarker)))))
@@ -474,8 +474,6 @@ sourcemarker have partly changed in the file."
     (eval-buffer)))
 
 (defun continue-write-db (&optional filename)
-  (dolist (buf (buffer-list))
-    (continue-save buf))
   (with-temp-buffer
     (maphash (lambda (k v)
                (insert (concat "(puthash " (prin1-to-string k) " '" (prin1-to-string v) " continue-db)"))
@@ -511,7 +509,18 @@ sourcemarker have partly changed in the file."
      (add-hook 'kill-emacs-hook 'continue-write-db)
      (add-hook 'find-file-hook 'continue-restore)
      (add-hook 'after-save-hook 'continue-save)
-     ;; (add-hook 'kill-buffer-hook 'continue-save)
+     (add-hook 'kill-buffer-hook 'continue-save)
      ))
 
 (provide 'continue)
+
+
+
+
+
+
+
+
+
+
+
