@@ -501,7 +501,10 @@ sourcemarker have partly changed in the file."
              (smarker (when filename
                         (gethash filename continue-db nil))))
         (when smarker
-          (continue-sourcemarker-visit smarker))))))
+          (continue-sourcemarker-visit smarker)
+          (when (eq major-mode 'org-mode)
+            (org-back-to-heading t)
+            (org-reveal)))))))
 
 (eval-after-load "continue"
   '(progn
