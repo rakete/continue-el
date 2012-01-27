@@ -37,6 +37,95 @@
           t)
       (error nil))))
 
+
+(defun continue-ignore-line-p ()
+  (save-excursion
+    (beginning-of-line)
+    (or (looking-at "^\\s-*$")
+        (< (length (let ((r (string-to-list (buffer-substring (point-at-bol) (point-at-eol)))))
+                     (dolist (c r (concatenate 'string r))
+                       (if (eq c ? )
+                           (setq r (cdr r)))))) 3))))
+
+(defun continue-previous-line-string ()
+  ;; if already at beginning of buffer collect #bobp#
+  (if (save-excursion
+        (beginning-of-line)
+        (bobp))
+      "#bobp#"
+    (progn
+      ;; walk up one line
+      (previous-line)
+      ;; skip empty lines or none when current line is not empty
+      (while (and (continue-ignore-line-p)
+                  (not (save-excursion
+                         (beginning-of-line)
+                         (bobp))))
+        (previous-line))
+      ;; check again if skipping empty lines
+      ;; brought us to the beginning of the buffer
+      ;; also, check if the actual line is empty
+      ;; because skippieng terminates on bobp as well
+      ;; and if it did, we still want to collect the line
+      ;; instead of #bobp#
+      ;; also, this is the part where the line is collected
+      ;; the condition will only be true on empty lines
+      ;; (which should have been skipped by now)
+      ;; or if we are at bobp
+      (if (and (save-excursion
+                 (beginning-of-line)
+                 (bobp))
+               (continue-ignore-line-p))
+          "#bobp#"
+        (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
+
+(defun continue-next-line-string ()
+  (if (save-excursion
+        (end-of-line)
+        (eobp))
+      "#eobp#"
+    (progn
+      (next-line)
+      (while (and (continue-ignore-line-p)
+                  (not (save-excursion
+                         (end-of-line)
+                         (eobp))))
+        (next-line))
+      (if (and (save-excursion
+                 (end-of-line)
+                 (eobp))
+               (continue-ignore-line-p))
+          "#eobp#"
+        (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
+
+(defun continue-previous-line ()
+  (interactive)
+  (previous-line)
+  (let ((direction 'up))
+    (while (continue-ignore-line-p)
+      (when (save-excursion
+              (beginning-of-line)
+              (bobp))
+        (setq direction 'down))
+      (if (eq direction 'up)
+          (previous-line)
+        (next-line))
+      )))
+
+(defun continue-next-line ()
+  (interactive)
+  (next-line)
+  (let ((direction 'down))
+    (while (continue-ignore-line-p)
+      (when (save-excursion
+              (end-of-line)
+              (eobp))
+        (setq direction 'up))
+      (if (eq direction 'down)
+          (next-line)
+        (previous-line))
+      )))
+
 (defun continue-sourcemarker-create (&optional n)
   "Sourcemarkers are a persitent alternative to emacs markers specifically aimed
 at marking lines in source code.
@@ -46,116 +135,63 @@ then be used by `continue-sourcemarker-restore' to restore point regardless of
 whether the piece of code has been moved around in the file. It should be even
 possible to restore a point if the lines that represent that point in the
 sourcemarker have partly changed in the file."
-  (let (r deactivate-mark)
-    (unless n
+  (let (r)
+    (unless (and n (>= n 2))
       (setq n 2))
-    (save-window-excursion
-      (save-excursion
-        (save-restriction
-          (org-save-outline-visibility
-              (show-all)
-            ;; return nil if the buffer is not big enough for a mark
-            (cond ((save-excursion
-                     (end-of-buffer)
-                     (< (line-number-at-pos) (+ (* n 2) 1)))
-                   `(,(progn
-                        (beginning-of-buffer)
-                        (point-at-bol))
-                     ,(buffer-file-name (current-buffer))
-                     nil))
-                  (t
-                   (progn
-                     ;; move point to nearest non-empty line
-                     ;; handle end-of-buffer/beginning-of-buffer
-                     ;; by reversing the search direction
-                     (let ((rev nil))
-                       (while (save-excursion
-                                (beginning-of-line)
-                                (looking-at "^\\s-*$"))
-                         (when (save-excursion
-                                 (end-of-line)
-                                 (eobp))
-                           (setq rev t))
-                         (if rev
-                             (previous-line)
-                           (next-line))
-                         ))
-                     (beginning-of-line)
-                     ;; two functions walking up/down from current point collecting lines
-                     ;; trimming whitespaces, skipping empty lines, collecting #eobp#/#bobp#
-                     ;; when at end/beginning of buffer
-                     (flet ((collect-up (m) (save-excursion
-                                              (reverse
-                                               ;; arg m is number of lines to collect
-                                               (loop for i from 1 to m
-                                                     collect (progn
-                                                               ;; if already at beginning of buffer collect #bobp#
-                                                               (if (save-excursion
-                                                                     (beginning-of-line)
-                                                                     (bobp))
-                                                                   "#bobp#"
-                                                                 (progn
-                                                                   ;; walk up one line
-                                                                   (previous-line)
-                                                                   ;; skip empty lines or none when current line is not empty
-                                                                   (while (and (save-excursion
-                                                                                 (beginning-of-line)
-                                                                                 (looking-at "^\\s-*$"))
-                                                                               (not (save-excursion
-                                                                                      (beginning-of-line)
-                                                                                      (bobp))))
-                                                                     (previous-line))
-                                                                   ;; check again if skipping empty lines
-                                                                   ;; brought us to the beginning of the buffer
-                                                                   ;; also, check if the actual line is empty
-                                                                   ;; because skipping terminates on bobp as well
-                                                                   ;; and if it did, we still want to collect the line
-                                                                   ;; instead of #bobp#
-                                                                   ;; also, this is the part where the line is collected
-                                                                   ;; the condition will only be true on empty lines
-                                                                   ;; (which should have been skipped by now)
-                                                                   ;; or if we are at bobp
-                                                                   (if (and (save-excursion
-                                                                              (beginning-of-line)
-                                                                              (bobp))
-                                                                            (save-excursion
-                                                                              (beginning-of-line)
-                                                                              (looking-at "^\\s-*$")))
-                                                                       "#bobp#"
-                                                                     (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))))))
-                            (collect-down (m) (save-excursion
-                                                (loop for i from 1 to m
-                                                      collect (progn
-                                                                (if (save-excursion
-                                                                      (end-of-line)
-                                                                      (eobp))
-                                                                    "#eobp#"
-                                                                  (progn
-                                                                    (next-line)
-                                                                    (while (and (save-excursion
-                                                                                  (beginning-of-line)
-                                                                                  (looking-at "^\\s-*$"))
-                                                                                (not (save-excursion
-                                                                                       (end-of-line)
-                                                                                       (eobp))))
-                                                                      (next-line))
-                                                                    (if (and (save-excursion
-                                                                               (end-of-line)
-                                                                               (eobp))
-                                                                             (save-excursion
-                                                                               (beginning-of-line)
-                                                                               (looking-at "^\\s-*$")))
-                                                                        "#eobp#"
-                                                                      (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))))))
-                       (let ((above (collect-up n))
-                             (below (collect-down n))
-                             (line (buffer-substring-no-properties (point-at-bol) (point-at-eol))))
-                         (setq r `((:point . ,(point-at-bol))
-                                   (:file . ,(buffer-file-name (current-buffer)))
-                                   (:lines-center . ,line)
-                                   (:lines-above . ,above)
-                                   (:lines-below . ,below)))
-                         )))))))))
+    (with-current-buffer (or (buffer-base-buffer (current-buffer))
+                             (current-buffer))
+      (save-window-excursion
+        (save-excursion
+          (save-restriction
+            (org-save-outline-visibility nil
+                (show-all)
+              ;; return nil if the buffer is not big enough for a mark
+              (cond ((save-excursion
+                       (end-of-buffer)
+                       (< (line-number-at-pos) (+ (* n 2) 1)))
+                     `(,(progn
+                          (beginning-of-buffer)
+                          (point-at-bol))
+                       ,(buffer-file-name (current-buffer))
+                       nil))
+                    (t
+                     (progn
+                       ;; move point to nearest non-empty line
+                       ;; handle end-of-buffer/beginning-of-buffer
+                       ;; by reversing the search direction
+                       (let ((rev nil))
+                         (while (continue-ignore-line-p)
+                           (when (save-excursion
+                                   (end-of-line)
+                                   (eobp))
+                             (setq rev t))
+                           (if rev
+                               (previous-line)
+                             (next-line))
+                           ))
+                       (beginning-of-line)
+                       ;; two functions walking up/down from current point collecting lines
+                       ;; trimming whitespaces, skipping empty lines, collecting #eobp#/#bobp#
+                       ;; when at end/beginning of buffer
+                       (flet ((collect-up (m) (save-excursion
+                                                (reverse
+                                                 ;; arg m is number of lines to collect
+                                                 (loop for i from 1 to m
+                                                       collect (continue-previous-line-string)))))
+                              (collect-down (m) (save-excursion
+                                                  (loop for i from 1 to m
+                                                        collect (continue-next-line-string)))))
+                         (let ((above (collect-up n))
+                               (below (collect-down n))
+                               (line (buffer-substring-no-properties (point-at-bol) (point-at-eol))))
+                           (setq r `((:point . ,(point-at-bol))
+                                     (:file . ,(buffer-file-name (current-buffer)))
+                                     (:number-of-lines . ,(line-number-at-pos (point-max)))
+                                     (:lines-center . ,line)
+                                     (:lines-above . ,above)
+                                     (:lines-below . ,below)
+                                     ))
+                           ))))))))))
     r))
 
 (defun continue-string-to-words-only (str)
@@ -205,65 +241,149 @@ sourcemarker have partly changed in the file."
     (sort (continue-zip words (mapcar 'continue-string-uniqueness words))
           (lambda (a b) (> (second a) (second b))))))
 
-
-(defun continue-sourcemarker-simple-search (smarker &optional matches str)
+(defun continue-sourcemarker-simple-search (smarker &optional matches)
+  (print "simple")
   (save-excursion
     (when (continue-sourcemarker-p smarker)
-      (let ((point (cdr (assoc :point smarker)))
-            (file (cdr (assoc :file smarker)))
-            (line (or str
-                      (cdr (assoc :lines-center smarker)))))
+      (let* ((point (cdr (assoc :point smarker)))
+             (point-at-bol (save-excursion (goto-char point) (point-at-bol)))
+             (file (cdr (assoc :file smarker)))
+             (line-2 (nth 1 (cdr (assoc :lines-above smarker))))
+             (line-1 (nth 0 (cdr (assoc :lines-above smarker))))
+             (line (cdr (assoc :lines-center smarker)))
+             (line+1 (nth 0 (cdr (assoc :lines-below smarker))))
+             (line+2 (nth 1 (cdr (assoc :lines-below smarker)))))
         (progn
           (goto-char point)
-          (beginning-of-line)
-          (when (looking-at line)
-            (point)))))))
+          (if (looking-at (regexp-quote line))
+              point-at-bol
+            (progn
+              (goto-char point)
+              (continue-next-line)
+              (if (looking-at (regexp-quote line+1))
+                  point-at-bol
+                (progn
+                  (goto-char point)
+                  (continue-previous-line)
+                  (if (looking-at (regexp-quote line-1))
+                      point-at-bol
+                    (progn
+                      (goto-char point)
+                      (continue-next-line)
+                      (continue-next-line)
+                      (if (looking-at (regexp-quote line+2))
+                          point-at-bol
+                        (progn
+                          (goto-char point)
+                          (continue-previous-line)
+                          (continue-previous-line)
+                          (if (looking-at (regexp-quote line-2))
+                              point-at-bol
+                            nil))))))))))))))
 
-(defun continue-sourcemarker-regexp-search (smarker &optional matches str min-length return-all use-frequencies)
+(defun test-simple-search ()
+  (interactive)
+  (print (continue-sourcemarker-simple-search (gethash (buffer-file-name (current-buffer)) continue-db))))
+
+(defun* continue-sourcemarker-regexp-search-1 (smarker &optional matches min-length)
+  (print "regexp")
+  (save-excursion
+    (if (and matches return-all)
+        matches
+      (when (continue-sourcemarker-p smarker)
+        (let* ((point (cdr (assoc :point smarker)))
+               (line (cdr (assoc :lines-center smarker)))
+               (words (remove-if (lambda (w) (or (< (length w) (or min-length 5))
+                                                 (< (let ((hs (make-hash-table)))
+                                                      (mapcar (lambda (c) (puthash c 0 hs)) w)
+                                                      (hash-table-count hs)) 4)
+                                                 ))
+                                 (sort (split-string line " " t) (lambda (a b) (> (length a) (length b))))))
+               (current-nol (line-number-at-pos (point-max)))
+               (smarker-nol (or (cdr (assoc :number-of-lines smarker)) -1))
+               (last-forward-match point)
+               (last-backward-match point)
+               (direction (if (>= current-nol smarker-nol)
+                              'forward
+                            'backward)))
+          (while (cond ((and (or (eq direction 'forward)
+                                 (eq last-backward-match 'finished))
+                             (not (eq last-forward-match 'finished)))
+                        (if (block "word-loop-forward"
+                              (goto-char last-forward-match)
+                              (dolist (w words nil)
+                                (let ((re (regexp-quote w)))
+                                  (if (re-search-forward re nil t)
+                                      (return-from "word-loop-forward" t)
+                                    (goto-char last-forward-match)))))
+                            (progn
+                              (add-to-list 'matches (point-at-bol))
+                              (setq last-forward-match (point)
+                                    direction 'backward)
+                              t)
+                          (progn
+                            (setq last-forward-match 'finished)
+                            t)))
+                       ((and (or (eq direction 'backward)
+                                 (eq last-forward-match 'finished))
+                             (not (eq last-backward-match 'finished)))
+                        (if (block "word-loop-backward"
+                              (goto-char last-backward-match)
+                              (dolist (w words nil)
+                                (let ((re (regexp-quote w)))
+                                  (if (re-search-backward re nil t)
+                                      (return-from "word-loop-backward" t)
+                                    (goto-char last-backward-match)))))
+                            (progn
+                              (add-to-list 'matches (point-at-bol))
+                              (setq last-backward-match (point)
+                                    direction 'forward)
+                              t)
+                          (progn
+                            (setq last-backward-match 'finished)
+                            t)))
+                       (t nil)))
+          matches)))))
+
+(defun* continue-sourcemarker-regexp-search (smarker &optional matches min-length)
+  (print "regexp")
   (save-excursion
     (if (and matches return-all)
         matches
       (when (continue-sourcemarker-p smarker)
         (let* ((file (cdr (assoc :file smarker)))
-               (line (or str
-                         (cdr (assoc :lines-center smarker))))
-               (words (remove-if (lambda (w) (< (length w) (or min-length 3)))
-                                 (if use-frequencies
-                                     (mapcar 'first (continue-string-words-by-uniqueness line))
-                                   (split-string line " " t))))
-               (last-matches))
-          (if return-all
-              (while words
-                (goto-char (point-min))
-                (let ((re (regexp-quote (pop words))))
-                  (while (re-search-forward re nil t)
-                    (unless (eq (last matches) (point-at-bol))
-                      (add-to-list 'matches (point-at-bol))))))
-            (progn
-              (goto-char (or (car matches)
-                             (point-min)))
-              (while (and (or (eq matches nil)
-                              (> (length matches) 1))
-                          words)
-                (let ((re (regexp-quote (pop words))))
-                  (dolist (m (setq last-matches (or matches
-                                                    (progn
-                                                      (while (re-search-forward re nil t)
-                                                        (add-to-list 'matches (point-at-bol)))
-                                                      matches))))
-                    (goto-char m)
-                    (unless (string-match re (buffer-substring (point-at-bol) (point-at-eol)))
-                      (setq matches (remove-if (lambda (n) (eq m n)) matches))))))
-              (unless matches
-                (setq matches last-matches))
-              (when (and words matches)
-                (let ((p nil)
-                      (m (car matches)))
-                  (goto-char m)
-                  (while (and words
-                              (setq p (string-match (regexp-quote (pop words)) (buffer-substring (point-at-bol) (point-at-eol))))))
-                  (unless p (setq matches nil))))))
+               (point (cdr (assoc :point smarker)))
+               (line (cdr (assoc :lines-center smarker)))
+               (words (remove-if (lambda (w) (or (< (length w) (or min-length 5))
+                                                 (< (let ((hs (make-hash-table)))
+                                                      (mapcar (lambda (c) (puthash c 0 hs)) w)
+                                                      (hash-table-count hs)) 4)
+                                                 ))
+                                 (sort (split-string line " " t) (lambda (a b) (> (length a) (length b))))))
+               (last-matches nil))
+          (setq matches (or matches (reverse (continue-sourcemarker-regexp-search-1 smarker matches min-length))))
+          (while (and (> (length matches) 1)
+                      words)
+            (setq last-matches matches)
+            (let ((re (regexp-quote (pop words))))
+              (dolist (m matches)
+                (goto-char m)
+                (unless (string-match re (buffer-substring (point-at-bol) (point-at-eol)))
+                  (setq matches (remove-if (lambda (n) (eq m n)) matches))))))
+          (unless matches
+            (setq matches last-matches))
+          ;; (when (and words matches)
+          ;;   (let ((p nil)
+          ;;         (m (car matches)))
+          ;;     (goto-char m)
+          ;;     (while (and words
+          ;;                 (setq p (string-match (regexp-quote (pop words)) (buffer-substring (point-at-bol) (point-at-eol))))))
+          ;;     (unless p (setq matches nil))))
           matches)))))
+
+(defun test-continue-regexp-search ()
+  (interactive)
+  (print (continue-sourcemarker-regexp-search (gethash (buffer-file-name (current-buffer)) continue-db))))
 
 (defun continue-buffer-string-to-fuzzy-char-lists (&optional seperator)
   (when (> (buffer-modified-tick) continue-buffer-fuzzy-char-list-computed-tick)
@@ -271,7 +391,8 @@ sourcemarker have partly changed in the file."
           continue-buffer-fuzzy-char-list-computed-tick (buffer-modified-tick)))
   continue-buffer-fuzzy-char-list)
 
-(defun continue-sourcemarker-fuzzy-search (smarker &optional matches str score-sym)
+(defun continue-sourcemarker-fuzzy-search (smarker &optional matches score-sym)
+  (print "fuzzy")
   (save-excursion
     (when matches
       (setq matches (mapcar 'line-number-at-pos matches)))
@@ -304,20 +425,26 @@ sourcemarker have partly changed in the file."
           (setf (symbol-value score-sym) bestfuzz)))
       (point-at-bol))))
 
+(defun continue-sourcemarker-combined-search (smarker &optional matches str)
+  (or (continue-sourcemarker-simple-search m)
+      (let* ((line-2 (nth 1 (cdr (assoc :lines-above smarker))))
+             (line-1 (nth 0 (cdr (assoc :lines-above smarker))))
+             (line (cdr (assoc :lines-center smarker)))
+             (line+1 (nth 0 (cdr (assoc :lines-below smarker))))
+             (line+2 (nth 1 (cdr (assoc :lines-below smarker))))
+             (threshold (or threshold (/ (length line) 3)))
+             (score 0)
+             p)
+        (setq p (continue-sourcemarker-fuzzy-search m (continue-sourcemarker-regexp-search m nil 5) 'score))
+        p)))
+
 (defun continue-sourcemarker-restore (ms &optional threshold)
   (interactive)
   (save-excursion
     (let ((matches nil))
       (dolist (m (if (continue-sourcemarker-p ms) (list ms) ms) (if (continue-sourcemarker-p ms) (car matches) matches))
         (with-current-buffer (find-file-noselect (cdr (assoc :file m)))
-          (goto-char (or (continue-sourcemarker-simple-search m)
-                         (let* ((line (cdr (assoc :lines-center m)))
-                                (threshold (or threshold (/ (length line) 3)))
-                                (score 0) p)
-                           (setq p (continue-sourcemarker-fuzzy-search m (continue-sourcemarker-regexp-search m nil line 3) line 'score))
-                           (when (> (- (length line) score) threshold)
-                             (setq p (continue-sourcemarker-fuzzy-search m (continue-sourcemarker-regexp-search m nil line 3 t) line)))
-                           p)))
+          (goto-char (continue-sourcemarker-combined-search m))
           (add-to-list 'matches (point-marker)))))))
 
 (defun continue-sourcemarker-visit (smarker)
