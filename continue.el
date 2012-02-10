@@ -718,17 +718,17 @@ sourcemarker have partly changed in the file."
             (goto-char (or (continue-sourcemarker-simple-search m)
                            (continue-sourcemarker-regexp-search m)
                            (point-min)))
-            (add-to-list 'matches (point-marker))))))))
+            (add-to-list 'matches (point))))))))
 
 (defun continue-sourcemarker-visit (smarker)
   (print "visit")
   (let* ((m (continue-sourcemarker-restore smarker))
-         (buf (marker-buffer m))
+         (buf (find-file-noselect (cdr (assoc :file smarker))))
          (oldframe (current-frame)))
-    (when (markerp m)
+    (when m
       (when (get-buffer-window (get-buffer buf) 'visible)
         (select-frame (window-frame (get-buffer-window (get-buffer buf) 'visible))))
-      (goto-char (marker-position m)))))
+      (goto-char m))))
 
 
 
