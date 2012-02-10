@@ -746,7 +746,10 @@ sourcemarker have partly changed in the file."
 
 (defvar continue-db-ignore '("\.recentf"
                              ".*/\.mk-project/"
-                             ".*/\.continue-db"))
+                             ".*/\.continue-db"
+                             ".*/\.recentf"
+                             "/tmp/.*"
+                             ".*\.tmp"))
 
 ;; (dolist (buf (buffer-list))
 ;;   (when (buffer-file-name buf)
