@@ -186,7 +186,7 @@ sourcemarker have partly changed in the file."
       (save-window-excursion
         (save-excursion
           (save-restriction
-            (org-save-outline-visibility nil
+            (org-save-outline-visibility t
               (show-all)
               ;; return nil if the buffer is not big enough for a mark
               (cond ((save-excursion
@@ -771,13 +771,16 @@ sourcemarker have partly changed in the file."
   (unless (boundp 'continue-prevent-save)
     (save-window-excursion
       (save-restriction
-        (let* ((buf (or buf (current-buffer)))
-               (filename (buffer-file-name buf)))
-          (when filename
-            (unless (and (buffer-file-name buf)
-                         (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
-              (with-current-buffer buf
-                (puthash filename (continue-sourcemarker-create) continue-db)))))))))
+        (org-save-outline-visibility nil
+          (let* ((buf (or buf (current-buffer)))
+                 (filename (buffer-file-name buf)))
+            (when filename
+              (unless (and (buffer-file-name buf)
+                           (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
+                (with-current-buffer buf
+                  (puthash filename (continue-sourcemarker-create) continue-db))
+                (continue-write-db)
+                ))))))))
 
 (defun continue-restore (&optional filename)
   (interactive)
@@ -791,8 +794,7 @@ sourcemarker have partly changed in the file."
                           (gethash filename continue-db nil))))
           (when smarker
             (continue-sourcemarker-visit smarker)
-            (when (and (boundp 'org-mode)
-                       (eq major-mode 'org-mode)
+            (when (and (eq major-mode 'org-mode)
                        (condition-case nil (org-back-to-heading t) (error nil)))
               (org-reveal))
             ))))))
