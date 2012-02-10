@@ -806,8 +806,8 @@ sourcemarker have partly changed in the file."
      (add-hook 'after-save-hook 'continue-save)
      (add-hook 'kill-buffer-hook 'continue-save)
 
-     (unless (boundp 'org-save-outline-visibility)
-       (defalias 'org-save-outline-visibility 'progn))
+     ;;(unless (boundp 'org-save-outline-visibility)
+     ;;  (defalias 'org-save-outline-visibility 'progn))
      ))
 
 (provide 'continue)
