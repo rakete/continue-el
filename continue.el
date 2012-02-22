@@ -1,6 +1,20 @@
-(require 'org)
+;; continue.el -- continue working on files from where you saved
+;; Copyright (C) 2012 Andreas Raster <lazor@affenbande.org>
 
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
 
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+(condition-case nil (require 'org) (error (defalias 'org-save-outline-visibility 'progn)))
 
 (defun continue-zip (&rest lists)
   (let* (;;(lists (append (list a) rest))
@@ -12,11 +26,6 @@
                                       collect (nth i (nth m lists))))))
       (setq i (1+ i)))
     rs))
-
-(defun* continue-any (pred xs)
-  (dolist (x xs nil)
-    (when (funcall pred x)
-      (return-from "continue-any" t))))
 
 
 
@@ -39,12 +48,22 @@
       (error nil))))
 
 (defun continue-ignore-word-p (w &optional min-length)
+  "Used to decide if a word should be skipped when creating/restoring
+a sourcemarker in `continue.el'
+
+See also `continue-ignore-line-p', `continue-previous-line',
+`continue-next-line'"
   (and (< (length (substring-no-properties w)) (or min-length 2))
        (< (let ((hs (make-hash-table)))
             (mapcar (lambda (c) (puthash c 'found hs)) w)
             (hash-table-count hs)) 3)))
 
 (defun continue-ignore-line-p (&optional min-length)
+  "Used to decide if a line should be skipped when creating/restoring a
+sourcemarker in `continue.el'
+
+See also `continue-ignore-word-p', `continue-previous-line',
+`continue-next-line'"
   (save-excursion
     (beginning-of-line)
     (or (looking-at "^\\s-*$")
@@ -112,6 +131,8 @@
         (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
 
 (defun continue-previous-line ()
+  "Goto previous line but skip over lines for which `continue-ignore-line-p'
+matches.  This is used in `continue.el' instead of `previous-line'."
   (interactive)
   (unless (save-excursion (beginning-of-line) (bobp))
     (previous-line-nomark)
@@ -127,6 +148,8 @@
         ))))
 
 (defun continue-next-line ()
+  "Goto next line but skip over lines for which `continue-ignore-line-p'
+matches. This is used in `continue.el' instead of `next-line'. "
   (interactive)
   (unless (save-excursion (end-of-line) (eobp))
     (next-line-nomark)
@@ -142,24 +165,33 @@
         ))))
 
 (defun continue-looking-at (re)
+  "Like `looking-at' but will match \"#eobp#\" for a line at end of buffer
+and \"#bobp#\" for a line at beginning of buffer."
   (or (and (string-equal re "#eobp#")
            (save-excursion (goto-char (point-at-eol)) (eobp)))
       (and (string-equal re "#bobp#")
            (save-excursion (goto-char (point-at-bol)) (bobp)))
       (looking-at re)))
 
-(defun continue-re-search-forward (re &optional bound noerror count match-buffer-ends)
-  (if (and match-buffer-ends
+(defun continue-re-search-forward (re &optional bound noerror count match-buffer-end)
+  "Equivalent for `re-search-forward' in `continue.el'. RE BOUND NOERROR and
+COUNT behave the same as in `re-search-forward', when MATCH-BUFFER-END is
+non-nil this function will match the end of the buffer if RE equals
+\"#eobp#\"."
+  (if (and match-buffer-end
            (string-equal re "#eobp#")
            (save-excursion (goto-char (point-at-eol)) (eobp)))
-      nil ;;(goto-char (point-max))
+      (point-max) ;;(goto-char (point-max))
     (re-search-forward re bound noerror count)))
 
-(defun continue-re-search-backward (re &optional bound noerror count match-buffer-ends)
-  (if (and match-buffer-ends
+(defun continue-re-search-backward (re &optional bound noerror count match-buffer-beginning)
+  "Equivalent for `re-search-backward' in `continue.el'. RE BOUND NOERROR and COUNT behave the same
+as in `re-search-backward', when MATCH-BUFFER-BEGINNING is non-nil this function will match the beginning
+of the buffer if RE equals \"#bobp#\"."
+  (if (and match-buffer-beginning
            (string-equal re "#bobp#")
            (save-excursion (goto-char (point-at-bol)) (bobp)))
-      nil ;;(goto-char (point-min))
+      (point-min) ;;(goto-char (point-min))
     (re-search-backward re bound noerror count)))
 
 
@@ -177,7 +209,19 @@ Creating a sourcemarker will collect lines around the current point which will
 then be used by `continue-sourcemarker-restore' to restore point regardless of
 whether the piece of code has been moved around in the file. It should be even
 possible to restore a point if the lines that represent that point in the
-sourcemarker have partly changed in the file."
+sourcemarker have partly changed in the file.
+
+Optional parameter N can be used to specify how many lines around will be saved.
+The default is 2 meaning two lines above the current line and two line below the
+current line will be saved in addition to the current line.
+
+Sourcemarker data structure layout:
+`((:point . ,(point-at-bol))
+  (:file . ,(buffer-file-name (current-buffer)))
+  (:number-of-lines . ,(line-number-at-pos (point-max)))
+  (:lines-center . ,line)
+  (:lines-above . ,above)
+  (:lines-below . ,below))"
   (let (r)
     (unless (and n (>= n 2))
       (setq n 2))
@@ -193,7 +237,7 @@ sourcemarker have partly changed in the file."
                        (end-of-buffer)
                        (< (line-number-at-pos) (+ (* n 2) 1)))
                      `(,(progn
-                          (beginning-of-buffer)
+                          (goto-char (point-min))
                           (point-at-bol))
                        ,(buffer-file-name (current-buffer))
                        nil))
@@ -243,14 +287,26 @@ sourcemarker have partly changed in the file."
 
 
 
-(defun continue-sourcemarker-simple-search (smarker &optional matches)
-  (print "simple")
+(defun continue-sourcemarker-simple-search (smarker)
+  "Simply look at the saved lines around the saved point of
+SMARKER and return a point if we find any matches comparing
+the current lines to the saved lines. Return nil if nothing
+matches.
+
+See also `continue-sourcemarker-restore'"
   (save-excursion
     (when (continue-sourcemarker-p smarker)
       (let* ((current-nol (line-number-at-pos (point-max)))
              (smarker-nol (or (cdr (assoc :number-of-lines smarker)) -1))
-             (point (+ (cdr (assoc :point smarker)) (- current-nol smarker-nol)))
-             (point-at-bol (save-excursion (goto-char point) (point-at-bol)))
+             ;; we'll check to buffer positions, one computed from the saved number of
+             ;; lines of the file and the current number of lines (adding the difference
+             ;; to the saved point in hope that it was moved by the additions/deletions)
+             (point-1 (+ (cdr (assoc :point smarker)) (- current-nol smarker-nol)))
+             (point-at-bol-1 (save-excursion (goto-char point-1) (point-at-bol)))
+             ;; and the other point we check is just the saved point, assuming that nothing had
+             ;; changed
+             (point-2 (cdr (assoc :point smarker)))
+             (point-at-bol-2 (save-excursion (goto-char point-2) (point-at-bol)))
              (file (cdr (assoc :file smarker)))
              (line-2 (nth 1 (cdr (assoc :lines-above smarker))))
              (line-1 (nth 0 (cdr (assoc :lines-above smarker))))
@@ -259,155 +315,87 @@ sourcemarker have partly changed in the file."
              (line+2 (nth 1 (cdr (assoc :lines-below smarker)))))
         ;; just try all possible combos, does not care if smarker was created with n > 2
         (progn
-          (goto-char point-at-bol)
+          (goto-char point-at-bol-1)
           (if (continue-looking-at (regexp-quote line))
-              point-at-bol
+              point-at-bol-1
             (progn
-              (goto-char point-at-bol)
+              (goto-char point-at-bol-1)
               (continue-next-line)
               (if (continue-looking-at (regexp-quote line+1))
-                  point-at-bol
+                  point-at-bol-1
                 (progn
-                  (goto-char point-at-bol)
+                  (goto-char point-at-bol-1)
                   (continue-previous-line)
                   (if (continue-looking-at (regexp-quote line-1))
-                      point-at-bol
+                      point-at-bol-1
                     (progn
-                      (goto-char point-at-bol)
+                      (goto-char point-at-bol-1)
                       (continue-next-line)
                       (continue-next-line)
                       (if (continue-looking-at (regexp-quote line+2))
-                          point-at-bol
+                          point-at-bol-1
                         (progn
-                          (goto-char point-at-bol)
+                          (goto-char point-at-bol-1)
                           (continue-previous-line)
                           (continue-previous-line)
                           (if (continue-looking-at (regexp-quote line-2))
-                              point-at-bol
-                            nil))))))))))))))
+                              point-at-bol-1
+                            (progn
+                              (goto-char point-at-bol-2)
+                              (if (continue-looking-at (regexp-quote line))
+                                  point-at-bol-2
+                                (progn
+                                  (goto-char point-at-bol-2)
+                                  (continue-next-line)
+                                  (if (continue-looking-at (regexp-quote line+1))
+                                      point-at-bol-2
+                                    (progn
+                                      (goto-char point-at-bol-2)
+                                      (continue-previous-line)
+                                      (if (continue-looking-at (regexp-quote line-1))
+                                          point-at-bol-2
+                                        (progn
+                                          (goto-char point-at-bol-2)
+                                          (continue-next-line)
+                                          (continue-next-line)
+                                          (if (continue-looking-at (regexp-quote line+2))
+                                              point-at-bol-2
+                                            (progn
+                                              (goto-char point-at-bol-2)
+                                              (continue-previous-line)
+                                              (continue-previous-line)
+                                              (if (continue-looking-at (regexp-quote line-2))
+                                                  point-at-bol-2
+                                                nil))))))))))))))))))))))))
 
 (defun test-simple-search ()
   (interactive)
   (print (continue-sourcemarker-simple-search (gethash (buffer-file-name (current-buffer)) continue-db))))
-
-(defun line-to-words (line &optional min-length)
-  (remove-if 'continue-ignore-word-p
-             (split-string line " " t)))
-
-(defun* continue-sourcemarker-regexp-search-matches (smarker &optional min-length)
-  (print "regexp-matches")
-  (save-excursion
-    (when (continue-sourcemarker-p smarker)
-      (let* ((point (cdr (assoc :point smarker)))
-             (line-2 (nth 1 (cdr (assoc :lines-above smarker))))
-             (line-1 (nth 0 (cdr (assoc :lines-above smarker))))
-             (line (cdr (assoc :lines-center smarker)))
-             (line+1 (nth 0 (cdr (assoc :lines-below smarker))))
-             (line+2 (nth 1 (cdr (assoc :lines-below smarker))))
-             (current-nol (line-number-at-pos (point-max)))
-             (smarker-nol (or (cdr (assoc :number-of-lines smarker)) -1)))
-        (flet ((regexp-search (words-1 &optional direction)
-                              (let ((matches-1 '())
-                                    (last-forward-match point)
-                                    (last-backward-match point)
-                                    (direction (or direction
-                                                   (if (>= current-nol smarker-nol)
-                                                       'forward
-                                                     'backward))))
-                                ;; while loop starting at smarker center point and looking around it
-                                ;; to find matches, alternates between above and below point
-                                ;; preference to start direction given by number of lines
-                                (while (cond ((and (or (eq direction 'forward)
-                                                       (eq last-backward-match 'finished))
-                                                   (not (eq last-forward-match 'finished)))
-                                              ;; look through all words try to find a match in the current line
-                                              ;; special case if eobp or bobp, return 'eobp/'bobp instead of point,
-                                              ;; receiver has to handle that
-                                              (let ((obp-or-match (block "word-loop-forward"
-                                                                    (goto-char last-forward-match)
-                                                                    (dolist (w words-1 nil)
-                                                                      (let ((re (regexp-quote w)))
-                                                                        (cond ((and (string-equal re "#eobp#")
-                                                                                    (= (length words-1) 1))
-                                                                               (return-from "word-loop-forward" 'obp))
-                                                                              ((continue-re-search-forward re nil t nil t)
-                                                                               (return-from "word-loop-forward" 'match))
-                                                                              (t (goto-char last-forward-match))))))))
-                                                (cond ((eq obp-or-match 'match)
-                                                       (progn
-                                                         (add-to-list 'matches-1 (point-at-bol))
-                                                         (setq last-forward-match (point-at-eol)
-                                                               direction 'backward)
-                                                         t))
-                                                      ((eq obp-or-match 'obp)
-                                                       (progn
-                                                         (add-to-list 'matches-1 'eobp)
-                                                         (setq last-forward-match 'finished)
-                                                         t))
-                                                      (t
-                                                       (progn
-                                                         (setq last-forward-match 'finished)
-                                                         t))))
-                                              )
-                                             ((and (or (eq direction 'backward)
-                                                       (eq last-forward-match 'finished))
-                                                   (not (eq last-backward-match 'finished)))
-                                              (let ((obp-or-match (block "word-loop-backward"
-                                                                    (goto-char last-backward-match)
-                                                                    (dolist (w words-1 nil)
-                                                                      (let ((re (regexp-quote w)))
-                                                                        (cond ((and (string-equal re "#bobp#")
-                                                                                    (= (length words-1) 1))
-                                                                               (return-from "word-loop-backward" 'obp))
-                                                                              ((continue-re-search-backward re nil t nil t)
-                                                                               (return-from "word-loop-backward" 'match))
-                                                                              (t (goto-char last-backward-match))))))))
-                                                (cond ((eq obp-or-match 'match)
-                                                       (progn
-                                                         (add-to-list 'matches-1 (point-at-bol))
-                                                         (setq last-backward-match (point-at-bol)
-                                                               direction 'forward)
-                                                         t))
-                                                      ((eq obp-or-match 'obp)
-                                                       (progn
-                                                         (add-to-list 'matches-1 'bobp)
-                                                         (setq last-backward-match 'finished)
-                                                         t))
-                                                      (t
-                                                       (progn
-                                                         (setq last-backward-match 'finished)
-                                                         t))))
-                                              )
-                                             (t nil)))
-                                ;; revese matches so that first match is the nearest to center line
-                                (reverse matches-1))))
-          `((:lines-center . ,(list (regexp-search (line-to-words line))))
-            (:lines-above . ,(list (regexp-search (line-to-words line-1) 'backward)
-                                   (regexp-search (line-to-words line-2) 'backward)))
-            (:lines-below . ,(list (regexp-search (line-to-words line+1) 'forward)
-                                   (regexp-search (line-to-words line+2) 'forward))))
-          )))))
-
-(defun test-regexp-search-matches ()
-  (interactive)
-  (print (continue-sourcemarker-regexp-search-matches (gethash (buffer-file-name (current-buffer)) continue-db))))
-
-(defun continue-match-token-difference (a b)
-  (flet ((token-value (tok)
-                      (cond ((eq (car tok) :lines-center)
-                             0)
-                            (t (if (eq (car tok) :lines-below)
-                                   (cdr tok)
-                                 (* (cdr tok) -1))))))
-    (- (token-value a) (token-value b))
-    ))
 
 (defun* continue-sourcemarker-regexp-search (smarker &optional (matching-order '((:lines-center)
                                                                                  (:lines-above . 1)
                                                                                  (:lines-below . 1)
                                                                                  (:lines-above . 2)
                                                                                  (:lines-below . 2))) last-final-score token-search-state)
-  ;; matching-order is a list of 'tokens' that represent the matches found a line of the sourcemarker,
+  "Find SMARKER in current buffer using regular expressions (re-search-forward
+and -backward). MATCHING-ORDER can be used to specify which lines
+of the sourcemarker to search and in which order.
+
+The default:
+'((:lines-center)
+  (:lines-above . 1)
+  (:lines-below . 1)
+  (:lines-above . 2)
+  (:lines-below . 2))
+
+tries to find the center line first, then the one above that,
+then below, then two above and lastly the one two below.
+
+LAST-FINAL-SCORE and TOKEN-SEARCH-STATE are used to save the
+search state when this function is called recursively.
+
+See also `continue-sourcemarker-restore'."
+  ;; matching-order is a list of 'tokens' that represent the matches found for a line of the sourcemarker,
   ;; so e.g. matches-center represents the matches where any word from the center-line
   ;; matched, matches-above . 2 are all matches where the line 2 lines above the center-line
   ;; matched, etc.
@@ -442,8 +430,8 @@ sourcemarker have partly changed in the file."
   ;; we can then assume that buffer position 10 is a better match for our sourcemarker
   ;; then position 20
   ;;
-  (print "regexp")
   ;; token-search-state keeps all neccessary information to resume search in another recursion step
+  ;;
   ;; restore token- hashtables from token-search-state or initialize with empty hashtables
   (let* ((token-last-forward-match (or (cdr (assoc :token-last-forward-match token-search-state))
                                        (make-hash-table :test 'equal)))
@@ -468,6 +456,20 @@ sourcemarker have partly changed in the file."
                               (nth (- (cdr tok) 1) (cdr (assoc (car tok) smarker))))
                              ((eq (car tok) :lines-above)
                               (nth (- (cdr tok) 1) (reverse (cdr (assoc (car tok) smarker)))))))
+           (line-to-words (line)
+                          (remove-if 'continue-ignore-word-p
+                                     (split-string line " " t)))
+           (match-token-difference (a b)
+                                   ;; given two tokens a and b find the number of line jumps it would
+                                   ;; take to get from a to b
+                                   (flet ((token-value (tok)
+                                                       (cond ((eq (car tok) :lines-center)
+                                                              0)
+                                                             (t (if (eq (car tok) :lines-below)
+                                                                    (cdr tok)
+                                                                  (* (cdr tok) -1))))))
+                                     (- (token-value a) (token-value b))
+                                     ))
            (token-next-match (tok)
                              ;; this searches matches concentrical around the smarker point, every call
                              ;; returns a single match and advances the token-search-state so that the next
@@ -599,7 +601,7 @@ sourcemarker have partly changed in the file."
                (let ((results nil)
                      (counter 0))
                  (flet ((normalize (m tok)
-                                   (let ((d (continue-match-token-difference tok pivot-token)))
+                                   (let ((d (match-token-difference tok pivot-token)))
                                      (save-excursion
                                        (cond ((eq m 'eobp)
                                               (save-excursion (goto-char (point-max)) (point-at-bol)))
@@ -706,8 +708,14 @@ sourcemarker have partly changed in the file."
 
 
 
-(defun continue-sourcemarker-restore (ms &optional threshold)
-  (print "restore")
+(defun continue-sourcemarker-restore (ms)
+  "Restore a list of sourcemarkers. MS can be a list or a single
+sourcemarker. This tries to restore the sourcemarker by calling
+`continue-sourcemarker-simple-search' and if that fais it tries
+`continue-sourcemarker-regexp-search'.
+Returns a list of points where sourcemarkers were found.
+
+See alse `continue-sourcemarker-visit'."
   (interactive)
   (save-excursion
     (let ((matches nil))
@@ -721,7 +729,9 @@ sourcemarker have partly changed in the file."
             (add-to-list 'matches (point))))))))
 
 (defun continue-sourcemarker-visit (smarker)
-  (print "visit")
+  "Visit SMARKER, opening the file if necessary but only
+visiting the point returned by `continue-sourcemarker-restore',
+not displaying the buffer."
   (let* ((m (continue-sourcemarker-restore smarker))
          (buf (find-file-noselect (cdr (assoc :file smarker))))
          (oldframe (current-frame)))
@@ -739,29 +749,32 @@ sourcemarker have partly changed in the file."
 
 
 
-(defvar continue-db (make-hash-table :test 'equal))
-;;(setq continue-db (make-hash-table :test 'equal))
+(defvar continue-db (make-hash-table :test 'equal)
+  "A hashtable that holds the saved sourcemarkers.")
 
-(defvar continue-db-filename "~/.continue-db")
+(defvar continue-db-filename "~/.continue-db"
+  "The filename where the `continue-db' is stored.")
 
 (defvar continue-db-ignore '("\.recentf"
                              ".*/\.mk-project/"
                              ".*/\.continue-db"
                              ".*/\.recentf"
                              "/tmp/.*"
-                             ".*\.tmp"))
-
-;; (dolist (buf (buffer-list))
-;;   (when (buffer-file-name buf)
-;;     (puthash (buffer-file-name buf) mk-proj-sourcemarker continue-db)))
+                             ".*\.tmp")
+  "List of regular expression. Every file that matches is ignored by
+`continue-save'.")
 
 (defun continue-load-db (&optional filename)
+  "Load data from `continue-db-filename' or FILENAME and put it
+into `continue-db'."
   (when (file-exists-p continue-db-filename)
     (with-temp-buffer
       (insert-file-contents (or filename continue-db-filename))
       (eval-buffer))))
 
 (defun continue-write-db (&optional filename)
+  "Take `continue-db' serialize it and write it to
+`continue-db-filename' or FILENAME."
   (with-temp-buffer
     (maphash (lambda (k v)
                (when v
@@ -770,6 +783,8 @@ sourcemarker have partly changed in the file."
     (write-file (or filename continue-db-filename))))
 
 (defun continue-save (&optional buf)
+  "Create sourcemarker for current position in current buffer or BUF,
+put it into `continue-db'."
   (interactive)
   (unless (boundp 'continue-prevent-save)
     (save-window-excursion
@@ -786,6 +801,8 @@ sourcemarker have partly changed in the file."
                 ))))))))
 
 (defun continue-restore (&optional filename)
+  "Look up current buffers filename or FILENAME in `continue-db'
+and restore associated sourcemarker, if any."
   (interactive)
   (unless (boundp 'continue-prevent-restore)
     (let ((buf (or (and filename
