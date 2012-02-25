@@ -471,19 +471,24 @@ See also `continue-sourcemarker-restore'."
                                      (- (token-value a) (token-value b))
                                      ))
            (token-next-match (tok)
+                             ;; for token TOK, return the next match, will return nil if no match can be
+                             ;; found and then restart from the first match if called a second time
+                             ;;
                              ;; this searches matches concentrical around the smarker point, every call
                              ;; returns a single match and advances the token-search-state so that the next
                              ;; call will return the next match for the token
-                             ;; matches are cached and returned from the cache on every revolving iteration
-                             ;; last-cache-pos is a pointer to the current cached matched, if it points beyond
+                             ;; matches are cached in a list and returned every revolving iteration by getting
+                             ;; the element of the list last-cache-pos points to, if it points beyond
                              ;; the end of the cache this function tries to find another match with re-search-
+                             ;; forward/backward
                              ;;
                              ;; last-forward-match and last-backward-match are used to keep the position of the
                              ;; last match, so it can be restored when we want to continue searching
-                             ;; if we fail to find a match in a direction, we set thats direction last-...-match
-                             ;; to finished (note that in that case this function calls itself recursivly to
-                             ;; searching continues in the other direction once, if still possible, so we don't
-                             ;; return nil unless there is really nothing left)
+                             ;; if we fail to find a match in a direction, we set last-forward/backward-match
+                             ;; to finished indicating that we found all matches in that direction
+                             ;; (note that in that case this function calls itself recursivly so searching
+                             ;; continues in the other direction that is not yet finished, so we don't
+                             ;; return nil unless there is really nothing left to find)
                              ;;
                              ;; when both directions are finished (and last-cache-pos pointing beyond the cache
                              ;; end), we return nil ONCE so that any while loop using this function stops, but
@@ -598,6 +603,8 @@ See also `continue-sourcemarker-restore'."
         ;; we use as pivot) do the main comparing
         (cond ((and first-match
                     (cdr matching-order))
+               ;; MAINLOOP
+               ;; gathering matches, normalizing and comparing them
                (let ((results nil)
                      (counter 0))
                  (flet ((normalize (m tok)
@@ -616,7 +623,6 @@ See also `continue-sourcemarker-restore'."
                                                          (progn
                                                            (continue-previous-line))))
                                               (point-at-bol)))))))
-                   ;; mainloop gathering matches, normalizing and comparing them
                    (block "match-testing-loop"
                      (let (tm done-first)
                        (while (setq tm (or (unless done-first
@@ -671,6 +677,8 @@ See also `continue-sourcemarker-restore'."
                          (unless (< final-score (+ (/ (length matching-order) 2) 1))
                            final-match)))
                      ))))
+              ;; END OF MAINLOOP
+              ;;
               ;; when we only have matches for the pivot line, but no other matches to
               ;; compare with, then just return the first match for the pivot line
               ((and first-match
