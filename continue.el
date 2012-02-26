@@ -14,6 +14,8 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+(require 'cl)
+
 (condition-case nil (require 'org) (error (defalias 'org-save-outline-visibility 'progn)))
 
 (defun continue-zip (&rest lists)
