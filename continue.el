@@ -808,7 +808,7 @@ put it into `continue-db'."
                            (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
                 (with-current-buffer buf
                   (puthash filename (continue-sourcemarker-create) continue-db))
-                (continue-write-db)
+                ;;(continue-write-db)
                 ))))))))
 
 (defun continue-restore (&optional filename)
@@ -837,7 +837,8 @@ and restore associated sourcemarker, if any."
      (add-hook 'kill-emacs-hook 'continue-write-db)
      (add-hook 'find-file-hook 'continue-restore)
      (add-hook 'after-save-hook 'continue-save)
-     (add-hook 'kill-buffer-hook 'continue-save)
+     (run-with-idle-timer 60 t 'continue-write-db)
+     ;;(add-hook 'kill-buffer-hook 'continue-save)
 
      ;;(unless (boundp 'org-save-outline-visibility)
      ;;  (defalias 'org-save-outline-visibility 'progn))
