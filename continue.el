@@ -223,7 +223,8 @@ Sourcemarker data structure layout:
   (:number-of-lines . ,(line-number-at-pos (point-max)))
   (:lines-center . ,line)
   (:lines-above . ,above)
-  (:lines-below . ,below))"
+  (:lines-below . ,below)
+  (:timestamp . ,(format-time-string \"%s\")))"
   (let (r)
     (unless (and n (>= n 2))
       (setq n 2))
