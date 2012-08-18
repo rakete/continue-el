@@ -137,7 +137,7 @@ See also `continue-ignore-word-p', `continue-previous-line',
 matches.  This is used in `continue.el' instead of `previous-line'."
   (interactive)
   (unless (save-excursion (beginning-of-line) (bobp))
-    (previous-line-nomark)
+    (previous-line)
     (let ((direction 'up))
       (while (continue-ignore-line-p)
         (when (save-excursion
@@ -145,8 +145,8 @@ matches.  This is used in `continue.el' instead of `previous-line'."
                 (bobp))
           (setq direction 'down))
         (if (eq direction 'up)
-            (previous-line-nomark)
-          (next-line-nomark))
+            (previous-line)
+          (next-line))
         ))))
 
 (defun continue-next-line ()
@@ -154,7 +154,7 @@ matches.  This is used in `continue.el' instead of `previous-line'."
 matches. This is used in `continue.el' instead of `next-line'. "
   (interactive)
   (unless (save-excursion (end-of-line) (eobp))
-    (next-line-nomark)
+    (next-line)
     (let ((direction 'down))
       (while (continue-ignore-line-p)
         (when (save-excursion
@@ -162,8 +162,8 @@ matches. This is used in `continue.el' instead of `next-line'. "
                 (eobp))
           (setq direction 'up))
         (if (eq direction 'down)
-            (next-line-nomark)
-          (previous-line-nomark))
+            (next-line)
+          (previous-line))
         ))))
 
 (defun continue-looking-at (re)
@@ -846,4 +846,3 @@ and restore associated sourcemarker, if any."
      ))
 
 (provide 'continue)
-
