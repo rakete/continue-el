@@ -16,6 +16,7 @@
 
 (require 'cl)
 
+;; I have a bad feeling about this...
 (condition-case nil (require 'org) (error (defalias 'org-save-outline-visibility 'progn)))
 
 (defun continue-zip (&rest lists)
@@ -764,8 +765,11 @@ not displaying the buffer."
 (defvar continue-db (make-hash-table :test 'equal)
   "A hashtable that holds the saved sourcemarkers.")
 
-(defvar continue-db-filename "~/.continue-db"
-  "The filename where the `continue-db' is stored.")
+(defvar continue-db-path "~/.continue-db"
+  "The path where the `continue-db' is stored.")
+
+(defvar continue-db-symbol "continue-db"
+  "Continue-el hash-table symbol.")
 
 (defvar continue-db-ignore '("\.recentf"
                              ".*/\.mk-project/"
@@ -776,23 +780,25 @@ not displaying the buffer."
   "List of regular expression. Every file that matches is ignored by
 `continue-save'.")
 
-(defun continue-load-db (&optional filename)
-  "Load data from `continue-db-filename' or FILENAME and put it
+(defun continue-load-db ()
+  "Load data from `continue-db-path' or FILENAME and put it
 into `continue-db'."
-  (when (file-exists-p continue-db-filename)
+  (when (file-exists-p continue-db-path)
     (with-temp-buffer
-      (insert-file-contents (or filename continue-db-filename))
+      (insert-file-contents continue-db-path)
       (eval-buffer))))
 
-(defun continue-write-db (&optional filename)
+(defun continue-write-db ()
   "Take `continue-db' serialize it and write it to
-`continue-db-filename' or FILENAME."
+`continue-db-path' or FILENAME."
   (with-temp-buffer
     (maphash (lambda (k v)
-               (when v
-                 (insert (concat "(puthash " (prin1-to-string k) " '" (prin1-to-string v) " continue-db)"))
-                 (newline))) continue-db)
-    (write-file (or filename continue-db-filename))))
+               (when (and v
+                          (or (string-match "^/[^:]\+:\\([^@]\+@\\|\\)[^:]\+:.*" k)
+                              (file-exists-p k)))
+                 (insert (concat "(puthash " (prin1-to-string k) " '" (prin1-to-string v) " (symbol-value (intern-soft continue-db-symbol)))"))
+                 (newline))) (symbol-value (intern-soft continue-db-symbol)))
+    (write-file continue-db-path)))
 
 (defun continue-save (&optional buf)
   "Create sourcemarker for current position in current buffer or BUF,
@@ -808,7 +814,7 @@ put it into `continue-db'."
               (unless (and (buffer-file-name buf)
                            (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
                 (with-current-buffer buf
-                  (puthash filename (continue-sourcemarker-create) continue-db))
+                  (puthash filename (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))
                 ;;(continue-write-db)
                 ))))))))
 
@@ -823,7 +829,7 @@ and restore associated sourcemarker, if any."
       (with-current-buffer buf
         (let* ((filename (buffer-file-name buf))
                (smarker (when filename
-                          (gethash filename continue-db nil))))
+                          (gethash filename (symbol-value (intern-soft continue-db-symbol)) nil))))
           (when smarker
             (continue-sourcemarker-visit smarker)
             (when (and (eq major-mode 'org-mode)
@@ -838,11 +844,16 @@ and restore associated sourcemarker, if any."
      (add-hook 'kill-emacs-hook 'continue-write-db)
      (add-hook 'find-file-hook 'continue-restore)
      (add-hook 'after-save-hook 'continue-save)
-     (run-with-idle-timer 60 t 'continue-write-db)
-     ;;(add-hook 'kill-buffer-hook 'continue-save)
-
-     ;;(unless (boundp 'org-save-outline-visibility)
-     ;;  (defalias 'org-save-outline-visibility 'progn))
+     ;; (add-hook 'delete-frame-functions (lambda ()
+     ;;                                     (unless (boundp 'continue-prevent-restore)
+     ;;                                       (let* ((buf (or buf (current-buffer)))
+     ;;                                              (filename (buffer-file-name buf)))
+     ;;                                         (when filename
+     ;;                                           (unless (and (buffer-file-name buf)
+     ;;                                                        (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
+     ;;                                             (with-current-buffer buf
+     ;;                                               (puthash filename (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))))))))
+     (run-with-idle-timer 120 t 'continue-write-db)
      ))
 
 (provide 'continue)
