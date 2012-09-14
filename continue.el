@@ -205,17 +205,17 @@ of the buffer if RE equals \"#bobp#\"."
 
 
 (defun continue-sourcemarker-create (&optional n)
-  "Sourcemarkers are a persitent alternative to emacs markers specifically aimed
+  "Sourcemarkers are a persistent alternative to emacs markers specifically aimed
 at marking lines in source code.
 
 Creating a sourcemarker will collect lines around the current point which will
 then be used by `continue-sourcemarker-restore' to restore point regardless of
 whether the piece of code has been moved around in the file. It should be even
 possible to restore a point if the lines that represent that point in the
-sourcemarker have partly changed in the file.
+sourcemarker have partly changed.
 
 Optional parameter N can be used to specify how many lines around will be saved.
-The default is 2 meaning two lines above the current line and two line below the
+The default is 2, meaning two lines above the current line and two line below the
 current line will be saved in addition to the current line.
 
 Sourcemarker data structure layout:
@@ -724,7 +724,7 @@ See also `continue-sourcemarker-restore'."
 (defun continue-sourcemarker-restore (ms)
   "Restore a list of sourcemarkers. MS can be a list or a single
 sourcemarker. This tries to restore the sourcemarker by calling
-`continue-sourcemarker-simple-search' and if that fais it tries
+`continue-sourcemarker-simple-search' and if that fails it tries
 `continue-sourcemarker-regexp-search'.
 Returns a list of points where sourcemarkers were found.
 
