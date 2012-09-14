@@ -281,7 +281,7 @@ Sourcemarker data structure layout:
                                      (:lines-center . ,line)
                                      (:lines-above . ,above)
                                      (:lines-below . ,below)
-                                     (:timestamp . ,(format-time-string "%s"))
+                                     (:timestamp . ,(format-time-string "%s%N"))
                                      ))
                            ))))))))))
     r))
