@@ -791,14 +791,17 @@ into `continue-db'."
 (defun continue-write-db ()
   "Take `continue-db' serialize it and write it to
 `continue-db-path' or FILENAME."
-  (with-temp-buffer
-    (maphash (lambda (k v)
-               (when (and v
-                          (or (string-match "^/[^:]\+:\\([^@]\+@\\|\\)[^:]\+:.*" k)
-                              (file-exists-p k)))
-                 (insert (concat "(puthash " (prin1-to-string k) " '" (prin1-to-string v) " (symbol-value (intern-soft continue-db-symbol)))"))
-                 (newline))) (symbol-value (intern-soft continue-db-symbol)))
-    (write-file continue-db-path)))
+  (let ((zeitgeist-prevent-send t))
+    (with-temp-buffer
+      (maphash (lambda (k v)
+                 (when (and v
+                            (or (string-match "^/[^:]\+:\\([^@]\+@\\|\\)[^:]\+:.*" k)
+                                (file-exists-p k)))
+                   (insert (concat "(puthash " (prin1-to-string k) " '" (prin1-to-string v) " (symbol-value (intern-soft continue-db-symbol)))"))
+                   (newline)))
+               (symbol-value (intern-soft continue-db-symbol)))
+      (write-file continue-db-path)
+      )))
 
 (defun continue-save (&optional buf)
   "Create sourcemarker for current position in current buffer or BUF,
@@ -809,7 +812,8 @@ put it into `continue-db'."
       (save-restriction
         (org-save-outline-visibility nil
           (let* ((buf (or buf (current-buffer)))
-                 (filename (buffer-file-name buf)))
+                 (filename (buffer-file-name buf))
+                 (zeitgeist-prevent-send t))
             (when filename
               (unless (and (buffer-file-name buf)
                            (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
