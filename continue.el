@@ -816,9 +816,10 @@ put it into `continue-db'."
                  (zeitgeist-prevent-send t))
             (when filename
               (unless (and (buffer-file-name buf)
-                           (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
+                           (some (lambda (re) (or (string-match re (buffer-file-name buf))
+                                                  (string-match re (file-truename (buffer-file-name buf))))) continue-db-ignore))
                 (with-current-buffer buf
-                  (puthash filename (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))
+                  (puthash (file-truename filename) (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))
                 ;;(continue-write-db)
                 ))))))))
 
@@ -833,7 +834,7 @@ and restore associated sourcemarker, if any."
       (with-current-buffer buf
         (let* ((filename (buffer-file-name buf))
                (smarker (when filename
-                          (gethash filename (symbol-value (intern-soft continue-db-symbol)) nil))))
+                          (gethash (file-truename filename) (symbol-value (intern-soft continue-db-symbol)) nil))))
           (when smarker
             (continue-sourcemarker-visit smarker)
             (when (and (eq major-mode 'org-mode)
