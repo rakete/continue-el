@@ -819,9 +819,9 @@ put it into `continue-db'."
                            (some (lambda (re) (or (string-match re (buffer-file-name buf))
                                                   (string-match re (file-truename (buffer-file-name buf))))) continue-db-ignore))
                 (with-current-buffer buf
-                  (puthash (file-truename filename) (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))
-                ;;(continue-write-db)
-                ))))))))
+                  (puthash (file-truename filename) (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))))))))))
+
+(defvar continue-prevent-regexps '("COMMIT_EDITMSG"))
 
 (defun continue-restore (&optional filename)
   "Look up current buffers filename or FILENAME in `continue-db'
@@ -831,16 +831,17 @@ and restore associated sourcemarker, if any."
     (let ((buf (or (and filename
                         (find-file-noselect filename))
                    (current-buffer))))
-      (with-current-buffer buf
-        (let* ((filename (buffer-file-name buf))
-               (smarker (when filename
-                          (gethash (file-truename filename) (symbol-value (intern-soft continue-db-symbol)) nil))))
-          (when smarker
-            (continue-sourcemarker-visit smarker)
-            (when (and (eq major-mode 'org-mode)
-                       (condition-case nil (org-back-to-heading t) (error nil)))
-              (org-reveal))
-            ))))))
+      (unless (some (lambda (re) (string-match re (buffer-name buf))) continue-prevent-regexps)
+        (with-current-buffer buf
+          (let* ((filename (buffer-file-name buf))
+                 (smarker (when filename
+                            (gethash (file-truename filename) (symbol-value (intern-soft continue-db-symbol)) nil))))
+            (when smarker
+              (continue-sourcemarker-visit smarker)
+              (when (and (eq major-mode 'org-mode)
+                         (condition-case nil (org-back-to-heading t) (error nil)))
+                (org-reveal))
+              (point-marker))))))))
 
 (eval-after-load "continue"
   '(progn
