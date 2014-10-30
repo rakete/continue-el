@@ -58,7 +58,7 @@ See also `continue-ignore-line-p', `continue-previous-line',
 `continue-next-line'"
   (and (< (length (substring-no-properties w)) (or min-length 2))
        (< (let ((hs (make-hash-table)))
-            (mapcar (lambda (c) (puthash c 'found hs)) w)
+            (mapc (lambda (c) (puthash c 'found hs)) w)
             (hash-table-count hs)) 3)))
 
 (defun continue-ignore-line-p (&optional min-length)
@@ -90,13 +90,13 @@ See also `continue-ignore-word-p', `continue-previous-line',
       "#bobp#"
     (progn
       ;; walk up one line
-      (previous-line)
+      (forward-line -1)
       ;; skip empty lines or none when current line is not empty
       (while (and (continue-ignore-line-p)
                   (not (save-excursion
                          (beginning-of-line)
                          (bobp))))
-        (previous-line))
+        (forward-line -1))
       ;; check again if skipping empty lines
       ;; brought us to the beginning of the buffer
       ;; also, check if the actual line is empty
@@ -120,12 +120,12 @@ See also `continue-ignore-word-p', `continue-previous-line',
         (eobp))
       "#eobp#"
     (progn
-      (next-line)
+      (forward-line 1)
       (while (and (continue-ignore-line-p)
                   (not (save-excursion
                          (end-of-line)
                          (eobp))))
-        (next-line))
+        (forward-line 1))
       (if (and (save-excursion
                  (end-of-line)
                  (eobp))
@@ -138,7 +138,7 @@ See also `continue-ignore-word-p', `continue-previous-line',
 matches.  This is used in `continue.el' instead of `previous-line'."
   (interactive)
   (unless (save-excursion (beginning-of-line) (bobp))
-    (previous-line)
+    (forward-line -1)
     (let ((direction 'up))
       (while (continue-ignore-line-p)
         (when (save-excursion
@@ -146,8 +146,8 @@ matches.  This is used in `continue.el' instead of `previous-line'."
                 (bobp))
           (setq direction 'down))
         (if (eq direction 'up)
-            (previous-line)
-          (next-line))
+            (forward-line -1)
+          (forward-line 1))
         ))))
 
 (defun continue-next-line ()
@@ -155,7 +155,7 @@ matches.  This is used in `continue.el' instead of `previous-line'."
 matches. This is used in `continue.el' instead of `next-line'. "
   (interactive)
   (unless (save-excursion (end-of-line) (eobp))
-    (next-line)
+    (forward-line 1)
     (let ((direction 'down))
       (while (continue-ignore-line-p)
         (when (save-excursion
@@ -163,8 +163,8 @@ matches. This is used in `continue.el' instead of `next-line'. "
                 (eobp))
           (setq direction 'up))
         (if (eq direction 'down)
-            (next-line)
-          (previous-line))
+            (forward-line 1)
+          (forward-line -1))
         ))))
 
 (defun continue-looking-at (re)
@@ -238,7 +238,7 @@ Sourcemarker data structure layout:
               (show-all)
               ;; return nil if the buffer is not big enough for a mark
               (cond ((save-excursion
-                       (end-of-buffer)
+                       (goto-char (point-max))
                        (< (line-number-at-pos) (+ (* n 2) 1)))
                      `(,(progn
                           (goto-char (point-min))
@@ -257,14 +257,14 @@ Sourcemarker data structure layout:
                                    (eobp))
                              (setq rev t))
                            (if rev
-                               (previous-line)
-                             (next-line))
+                               (forward-line -1)
+                             (forward-line 1))
                            ))
                        (beginning-of-line)
                        ;; two functions walking up/down from current point collecting lines
                        ;; trimming whitespaces, skipping empty lines, collecting #eobp#/#bobp#
                        ;; when at end/beginning of buffer
-                       (flet ((collect-up (m) (save-excursion
+                       (cl-flet ((collect-up (m) (save-excursion
                                                 (reverse
                                                  ;; arg m is number of lines to collect
                                                  (loop for i from 1 to m
@@ -747,7 +747,7 @@ visiting the point returned by `continue-sourcemarker-restore',
 not displaying the buffer."
   (let* ((m (continue-sourcemarker-restore smarker))
          (buf (find-file-noselect (cdr (assoc :file smarker))))
-         (oldframe (current-frame)))
+         (oldframe (selected-frame)))
     (when m
       (when (get-buffer-window (get-buffer buf) 'visible)
         (select-frame (window-frame (get-buffer-window (get-buffer buf) 'visible))))
