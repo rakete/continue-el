@@ -373,15 +373,67 @@ See also `continue-sourcemarker-restore'"
                                                   point-at-bol-2
                                                 nil))))))))))))))))))))))))
 
-(defun test-simple-search ()
-  (interactive)
-  (print (continue-sourcemarker-simple-search (gethash (buffer-file-name (current-buffer)) continue-db))))
+;; (defun test-simple-search ()
+;;   (interactive)
+;;   (print (continue-sourcemarker-simple-search (gethash (buffer-file-name (current-buffer)) continue-db))))
 
-(defun* continue-sourcemarker-regexp-search (smarker &optional (matching-order '((:lines-center)
-                                                                                 (:lines-above . 1)
-                                                                                 (:lines-below . 1)
-                                                                                 (:lines-above . 2)
-                                                                                 (:lines-below . 2))) last-final-score token-search-state)
+(defun continue-sourcemarker-line-score-search (smarker)
+  (let* ((lines-list (split-string (buffer-substring-no-properties (point-min) (point-max)) "\n" t))
+         ;;(scores-vector (make-vector (+ (length lines-list) 4) -1))
+         (lines-vector (make-vector (+ (length lines-list) 4) nil))
+         (n 0)
+         (above-words-2 (remove-duplicates (split-string (nth 0 (cdr (assoc :lines-above smarker))) " " t) :test 'equal))
+         (above-words-1 (remove-duplicates (split-string (nth 1 (cdr (assoc :lines-above smarker))) " " t) :test 'equal))
+         (pivot-words (remove-duplicates (split-string (cdr (assoc :lines-center smarker)) " " t) :test 'equal))
+         (below-words+1 (remove-duplicates (split-string (nth 0 (cdr (assoc :lines-below smarker))) " " t) :test 'equal))
+         (below-words+2 (remove-duplicates (split-string (nth 1 (cdr (assoc :lines-below smarker))) " " t) :test 'equal))
+         (high-score 0)
+         (best-line nil))
+    (dolist (line (append (list "#bobp#" "#bobp#") lines-list (list "#eobp#" "#eobp#")))
+      (let ((words (split-string line " " t)))
+        (setf (elt lines-vector n) words)
+        (when (>= n 4)
+          (let ((score 0)
+                (line-words-2 (elt lines-vector (- n 4)))
+                (line-words-1 (elt lines-vector (- n 3)))
+                (line-words-0 (elt lines-vector (- n 2)))
+                (line-words+1 (elt lines-vector (- n 1)))
+                (line-words+2 (elt lines-vector (- n 0))))
+            (dolist (w above-words-2)
+              (when (position w line-words-2 :test 'equal)
+                (setq score (+ score 8))))
+            (dolist (w above-words-1)
+              (when (position w line-words-1 :test 'equal)
+                (setq score (+ score 10))))
+            (dolist (w pivot-words)
+              (when (position w line-words-0 :test 'equal)
+                (setq score (+ score 12))))
+            (dolist (w below-words+1)
+              (when (position w line-words+1 :test 'equal)
+                (setq score (+ score 10))))
+            (dolist (w below-words+2)
+              (when (position w line-words+2 :test 'equal)
+                (setq score (+ score 8))))
+            ;;(setf (elt scores-vector (- n 2)) score)
+            (when (> score high-score)
+              (setq high-score score
+                    best-line (- n 4))))))
+      (setq n (1+ n)))
+    (when (and best-line
+               (> high-score 12))
+      (save-excursion
+        (goto-char (point-min))
+        (dotimes (line best-line)
+          (continue-next-line))
+        (point-at-bol)))))
+
+;; (goto-char (continue-sourcemarker-line-score-search (gethash (file-truename (buffer-file-name (current-buffer))) continue-db)))
+
+(defun* continue-sourcemarker-regexp-search2 (smarker &optional (matching-order '((:lines-center)
+                                                                                  (:lines-above . 1)
+                                                                                  (:lines-below . 1)
+                                                                                  (:lines-above . 2)
+                                                                                  (:lines-below . 2))) last-final-score token-search-state)
   "Find SMARKER in current buffer using regular expressions (re-search-forward
 and -backward). MATCHING-ORDER can be used to specify which lines
 of the sourcemarker to search and in which order.
@@ -453,263 +505,263 @@ See also `continue-sourcemarker-restore'."
          (current-nol (line-number-at-pos (point-max)))
          (smarker-nol (or (cdr (assoc :number-of-lines smarker)) -1))
          (point (save-excursion (goto-char (+ (cdr (assoc :point smarker)) (- current-nol smarker-nol))) (point-at-bol))))
-    (flet ((token-line (tok)
-                       ;; map token to line in smarker
-                       (cond ((eq (car tok) :lines-center)
-                              (cdr (assoc (car tok) smarker)))
-                             ((eq (car tok) :lines-below)
-                              (nth (- (cdr tok) 1) (cdr (assoc (car tok) smarker))))
-                             ((eq (car tok) :lines-above)
-                              (nth (- (cdr tok) 1) (reverse (cdr (assoc (car tok) smarker)))))))
-           (line-to-words (line)
-                          (remove-if 'continue-ignore-word-p
-                                     (split-string line " " t)))
-           (match-token-difference (a b)
-                                   ;; given two tokens a and b find the number of line jumps it would
-                                   ;; take to get from a to b
-                                   (flet ((token-value (tok)
-                                                       (cond ((eq (car tok) :lines-center)
-                                                              0)
-                                                             (t (if (eq (car tok) :lines-below)
-                                                                    (cdr tok)
-                                                                  (* (cdr tok) -1))))))
-                                     (- (token-value a) (token-value b))
-                                     ))
-           (token-next-match (tok)
-                             ;; for token TOK, return the next match, will return nil if no match can be
-                             ;; found and then restart from the first match if called a second time
-                             ;;
-                             ;; this searches matches concentrical around the smarker point, every call
-                             ;; returns a single match and advances the token-search-state so that the next
-                             ;; call will return the next match for the token
-                             ;; matches are cached in a list and returned every revolving iteration by getting
-                             ;; the element of the list last-cache-pos points to, if it points beyond
-                             ;; the end of the cache this function tries to find another match with re-search-
-                             ;; forward/backward
-                             ;;
-                             ;; last-forward-match and last-backward-match are used to keep the position of the
-                             ;; last match, so it can be restored when we want to continue searching
-                             ;; if we fail to find a match in a direction, we set last-forward/backward-match
-                             ;; to finished indicating that we found all matches in that direction
-                             ;; (note that in that case this function calls itself recursivly so searching
-                             ;; continues in the other direction that is not yet finished, so we don't
-                             ;; return nil unless there is really nothing left to find)
-                             ;;
-                             ;; when both directions are finished (and last-cache-pos pointing beyond the cache
-                             ;; end), we return nil ONCE so that any while loop using this function stops, but
-                             ;; we also set last-cache-pos to 0 so that if we call this function again with tok,
-                             ;; we'll start getting the cached elements
-                             (let* ((words (line-to-words (token-line tok)))
-                                    (last-forward-match (gethash tok token-last-forward-match point))
-                                    (last-backward-match (gethash tok token-last-backward-match point))
-                                    (direction (gethash tok token-direction (if (eq (car tok) :lines-above)
-                                                                                'backward
-                                                                              'forward)))
-                                    (cache (gethash tok token-cache nil))
-                                    (last-cache-pos (gethash tok token-cache-pos -1))
-                                    (result (cond ((and (>= last-cache-pos 0)
-                                                        (< last-cache-pos (- (length cache) 1)))
-                                                   (progn
-                                                     (let ((p last-cache-pos))
-                                                       (setq last-cache-pos (+ last-cache-pos 1))
-                                                       (nth p cache))))
-                                                  ((and (or (eq direction 'forward)
-                                                            (eq last-backward-match 'finished))
-                                                        (not (eq last-forward-match 'finished)))
-                                                   ;; look through all words try to find a match, search every word
-                                                   ;; pick the match closest to smarker point
-                                                   ;; special case if eobp or bobp, return 'eobp/'bobp instead of match,
-                                                   ;; receiver has to handle that
-                                                   (let ((obp-or-match (block "word-loop-forward"
-                                                                         (cond ((and (= (length words) 1)
-                                                                                     (string-equal (car words) "#eobp#"))
-                                                                                (return-from "word-loop-forward" 'obp))
-                                                                               ((let ((ms (loop for w in words
-                                                                                                if (progn (goto-char last-forward-match)
-                                                                                                          (continue-re-search-forward (regexp-quote w) nil t nil t))
-                                                                                                collect (point))))
-                                                                                  (when ms
-                                                                                    (goto-char (car (sort ms (lambda (a b) (< (abs (- a point)) (abs (- b point)))))))
-                                                                                    t
-                                                                                    ))
-                                                                                (return-from "word-loop-forward" 'match))
-                                                                               (t (goto-char last-forward-match))))))
-                                                     ;; obp-or-match will either
-                                                     ;; 'match: at (point) is a match
-                                                     ;; 'obp: we hit the end or beginning of the buffer
-                                                     ;; nil in case nothing was found
-                                                     (cond ((eq obp-or-match 'match)
-                                                            (progn
-                                                              (setq last-forward-match (point-at-eol)
-                                                                    direction 'backward)
-                                                              (setq cache (append cache `(,(point-at-bol))))
-                                                              (setq last-cache-pos (- (length cache) 1))
-                                                              (point-at-bol)))
-                                                           ((eq obp-or-match 'obp)
-                                                            (progn
-                                                              (setq last-forward-match 'finished)
-                                                              (setq cache (append cache '(eobp)))
-                                                              (setq last-cache-pos (- (length cache) 1))
-                                                              'eobp))
-                                                           (t
-                                                            (progn
-                                                              (setq last-forward-match 'finished)))))
-                                                   )
-                                                  ((and (or (eq direction 'backward)
-                                                            (eq last-forward-match 'finished))
-                                                        (not (eq last-backward-match 'finished)))
-                                                   (let ((obp-or-match (block "word-loop-backward"
-                                                                         (cond ((and (= (length words) 1)
-                                                                                     (string-equal (car words) "#bobp#"))
-                                                                                (return-from "word-loop-backward" 'obp))
-                                                                               ((let ((ms (loop for w in words
-                                                                                                if (progn (goto-char last-backward-match)
-                                                                                                          (continue-re-search-backward (regexp-quote w) nil t nil t))
-                                                                                                collect (point))))
-                                                                                  (when ms
-                                                                                    (goto-char (car (sort ms (lambda (a b) (< (abs (- a point)) (abs (- b point)))))))
-                                                                                    t
-                                                                                    ))
-                                                                                (return-from "word-loop-backward" 'match))
-                                                                               (t (goto-char last-backward-match))))))
-                                                     (cond ((eq obp-or-match 'match)
-                                                            (progn
-                                                              (setq last-backward-match (point-at-bol)
-                                                                    direction 'forward)
-                                                              (setq cache (append cache `(,(point-at-bol))))
-                                                              (setq last-cache-pos (- (length cache) 1))
-                                                              (point-at-bol)))
-                                                           ((eq obp-or-match 'obp)
-                                                            (progn
-                                                              (setq last-backward-match 'finished)
-                                                              (setq cache (append cache '(bobp)))
-                                                              (setq last-cache-pos (- (length cache) 1))
-                                                              'bobp))
-                                                           (t
-                                                            (progn
-                                                              (setq last-backward-match 'finished))))))
-                                                  (t (progn
-                                                       (setq last-cache-pos 0)
-                                                       nil)))))
-                               ;; save the token-search-state in hashtables
-                               (puthash tok last-forward-match token-last-forward-match)
-                               (puthash tok last-backward-match token-last-backward-match)
-                               (puthash tok direction token-direction)
-                               (puthash tok cache token-cache)
-                               (puthash tok last-cache-pos token-cache-pos)
-                               (if (eq result 'finished)
-                                   (token-next-match tok)
-                                 result)
-                               )))
-      (let* ((pivot-token (car matching-order))
-             (first-match (token-next-match pivot-token)))
-        ;; only if there are matches for the pivot line and tokens for
-        ;; other matches are still available (other than the first one which
-        ;; we use as pivot) do the main comparing
-        (cond ((and first-match
-                    (cdr matching-order))
-               ;; MAINLOOP
-               ;; gathering matches, normalizing and comparing them
-               (let ((results nil)
-                     (counter 0))
-                 (flet ((normalize (m tok)
-                                   (let ((d (match-token-difference tok pivot-token)))
-                                     (save-excursion
-                                       (cond ((eq m 'eobp)
-                                              (save-excursion (goto-char (point-max)) (point-at-bol)))
-                                             ((eq m 'bobp)
-                                              (point-min))
-                                             (t
-                                              (goto-char m)
-                                              (loop for i from 0 to (- (abs d) 1)
-                                                    do (if (< d 0)
-                                                           (progn
-                                                             (continue-next-line))
-                                                         (progn
-                                                           (continue-previous-line))))
-                                              (point-at-bol)))))))
-                   (block "match-testing-loop"
-                     (let (tm done-first)
-                       (while (setq tm (or (unless done-first
-                                             (setq done-first first-match))
-                                           (token-next-match pivot-token)))
-                         (let ((tm-score 1))
-                           (dolist (against-token (cdr matching-order))
-                             (block "against-match-testing-loop"
-                               (let ((am (token-next-match against-token)))
-                                 (if am
-                                     (let ((am-normalized (normalize am against-token)))
-                                       (when (= tm am-normalized)
-                                         (setq tm-score (+ tm-score 1))
-                                         (return-from "against-match-testing-loop" t)))
-                                   (return-from "against-match-testing-loop" t)))))
-                           (setq results (append results `((,tm-score . ,tm))))
-                           ;; go fast rather than correct if there are many matches
-                           ;; tweak mainloop breaking here for snappier behaviour in edge cases
-                           (when (or (= tm-score (length matching-order))
-                                     (> counter 100)
-                                     (and (> counter 10)
-                                          (>= tm-score (+ (/ (length matching-order) 2) 1)))
-                                     )
-                             (return-from "match-testing-loop" t))
-                           (setq counter (+ counter 1))))))
-                   ;; sort matches by their score, and if score is equal sort by distance from sourcemarker center point (smaller is better)
-                   (let* ((final-result (car (sort results (lambda (a b) (cond ((> (car a) (car b))
-                                                                                t)
-                                                                               ((= (car a) (car b))
-                                                                                (if (< (abs (- point (cdr a))) (abs (- point (cdr b))))
-                                                                                    t
-                                                                                  nil)))))))
-                          (final-score (car final-result))
-                          (final-match (cdr final-result)))
-                     ;; recur without pivot element if final score is too low, hoping that we will find a better match
-                     (if (and last-final-score
-                              (>= last-final-score final-score))
-                         ;; previous recursion steps score looked better, just return nil so calling function returns
-                         ;; final-match instead of recur-match
-                         nil
-                       (if (and (< final-score (+ (/ (length matching-order) 2) 1))
-                                (> (length (cdr matching-order)) 1)
-                                (not last-final-score))
-                           (let ((recur-match (continue-sourcemarker-regexp-search smarker (cdr matching-order) final-score `((:token-cache . ,token-cache)
-                                                                                                                              (:token-cache-pos . ,(maphash (lambda (k v) 0) token-cache-pos))
-                                                                                                                              ))))
-                             ;; if recursion yields nothing return final-score
-                             ;; unless final-score is 1 then retun nil
-                             (or recur-match
-                                 (unless (< final-score (+ (/ (length matching-order) 2) 1))
-                                   final-match)))
-                         (unless (< final-score (+ (/ (length matching-order) 2) 1))
-                           final-match)))
-                     ))))
-              ;; END OF MAINLOOP
-              ;;
-              ;; when we only have matches for the pivot line, but no other matches to
-              ;; compare with, then just return the first match for the pivot line
-              ((and first-match
-                    (not (cdr matching-order)))
-               (unless (> last-final-score 1)
-                 first-match))
-              ;; when there are no matches for the pivot line but (potentially) other
-              ;; matches for the rest of the matching order, call this function recursivly
-              ;; with the first token of the matching order (the current pivot) stripped
-              ;; from the matching order
-              ((and (not first-match)
-                    (cdr matching-order)
-                    (> (length (cdr matching-order)) 1)
-                    (not last-final-score))
-               (continue-sourcemarker-regexp-search smarker (cdr matching-order) nil `((:token-cache . ,token-cache)
-                                                                                       (:token-cache-pos . ,(maphash (lambda (k v) 0) token-cache-pos))
-                                                                                       )))
-              ;; we failed to find anything at all
-              (t nil))))))
+    (cl-flet ((token-line (tok)
+                          ;; map token to line in smarker
+                          (cond ((eq (car tok) :lines-center)
+                                 (cdr (assoc (car tok) smarker)))
+                                ((eq (car tok) :lines-below)
+                                 (nth (- (cdr tok) 1) (cdr (assoc (car tok) smarker))))
+                                ((eq (car tok) :lines-above)
+                                 (nth (- (cdr tok) 1) (reverse (cdr (assoc (car tok) smarker)))))))
+              (line-to-words (line)
+                             (remove-if 'continue-ignore-word-p
+                                        (split-string line " " t)))
+              (match-token-difference (a b)
+                                      ;; given two tokens a and b find the number of line jumps it would
+                                      ;; take to get from a to b
+                                      (cl-flet ((token-value (tok)
+                                                             (cond ((eq (car tok) :lines-center)
+                                                                    0)
+                                                                   (t (if (eq (car tok) :lines-below)
+                                                                          (cdr tok)
+                                                                        (* (cdr tok) -1))))))
+                                        (- (token-value a) (token-value b))
+                                        )))
+      (cl-labels ((token-next-match (tok)
+                                  ;; for token TOK, return the next match, will return nil if no match can be
+                                  ;; found and then restart from the first match if called a second time
+                                  ;;
+                                  ;; this searches matches concentrical around the smarker point, every call
+                                  ;; returns a single match and advances the token-search-state so that the next
+                                  ;; call will return the next match for the token
+                                  ;; matches are cached in a list and returned every revolving iteration by getting
+                                  ;; the element of the list last-cache-pos points to, if it points beyond
+                                  ;; the end of the cache this function tries to find another match with re-search-
+                                  ;; forward/backward
+                                  ;;
+                                  ;; last-forward-match and last-backward-match are used to keep the position of the
+                                  ;; last match, so it can be restored when we want to continue searching
+                                  ;; if we fail to find a match in a direction, we set last-forward/backward-match
+                                  ;; to finished indicating that we found all matches in that direction
+                                  ;; (note that in that case this function calls itself recursivly so searching
+                                  ;; continues in the other direction that is not yet finished, so we don't
+                                  ;; return nil unless there is really nothing left to find)
+                                  ;;
+                                  ;; when both directions are finished (and last-cache-pos pointing beyond the cache
+                                  ;; end), we return nil ONCE so that any while loop using this function stops, but
+                                  ;; we also set last-cache-pos to 0 so that if we call this function again with tok,
+                                  ;; we'll start getting the cached elements
+                                  (let* ((words (line-to-words (token-line tok)))
+                                         (last-forward-match (gethash tok token-last-forward-match point))
+                                         (last-backward-match (gethash tok token-last-backward-match point))
+                                         (direction (gethash tok token-direction (if (eq (car tok) :lines-above)
+                                                                                     'backward
+                                                                                   'forward)))
+                                         (cache (gethash tok token-cache nil))
+                                         (last-cache-pos (gethash tok token-cache-pos -1))
+                                         (result (cond ((and (>= last-cache-pos 0)
+                                                             (< last-cache-pos (- (length cache) 1)))
+                                                        (progn
+                                                          (let ((p last-cache-pos))
+                                                            (setq last-cache-pos (+ last-cache-pos 1))
+                                                            (nth p cache))))
+                                                       ((and (or (eq direction 'forward)
+                                                                 (eq last-backward-match 'finished))
+                                                             (not (eq last-forward-match 'finished)))
+                                                        ;; look through all words try to find a match, search every word
+                                                        ;; pick the match closest to smarker point
+                                                        ;; special case if eobp or bobp, return 'eobp/'bobp instead of match,
+                                                        ;; receiver has to handle that
+                                                        (let ((obp-or-match (block "word-loop-forward"
+                                                                              (cond ((and (= (length words) 1)
+                                                                                          (string-equal (car words) "#eobp#"))
+                                                                                     (return-from "word-loop-forward" 'obp))
+                                                                                    ((let ((ms (loop for w in words
+                                                                                                     if (progn (goto-char last-forward-match)
+                                                                                                               (continue-re-search-forward (regexp-quote w) nil t nil t))
+                                                                                                     collect (point))))
+                                                                                       (when ms
+                                                                                         (goto-char (car (sort ms (lambda (a b) (< (abs (- a point)) (abs (- b point)))))))
+                                                                                         t
+                                                                                         ))
+                                                                                     (return-from "word-loop-forward" 'match))
+                                                                                    (t (goto-char last-forward-match))))))
+                                                          ;; obp-or-match will either
+                                                          ;; 'match: at (point) is a match
+                                                          ;; 'obp: we hit the end or beginning of the buffer
+                                                          ;; nil in case nothing was found
+                                                          (cond ((eq obp-or-match 'match)
+                                                                 (progn
+                                                                   (setq last-forward-match (point-at-eol)
+                                                                         direction 'backward)
+                                                                   (setq cache (append cache `(,(point-at-bol))))
+                                                                   (setq last-cache-pos (- (length cache) 1))
+                                                                   (point-at-bol)))
+                                                                ((eq obp-or-match 'obp)
+                                                                 (progn
+                                                                   (setq last-forward-match 'finished)
+                                                                   (setq cache (append cache '(eobp)))
+                                                                   (setq last-cache-pos (- (length cache) 1))
+                                                                   'eobp))
+                                                                (t
+                                                                 (progn
+                                                                   (setq last-forward-match 'finished)))))
+                                                        )
+                                                       ((and (or (eq direction 'backward)
+                                                                 (eq last-forward-match 'finished))
+                                                             (not (eq last-backward-match 'finished)))
+                                                        (let ((obp-or-match (block "word-loop-backward"
+                                                                              (cond ((and (= (length words) 1)
+                                                                                          (string-equal (car words) "#bobp#"))
+                                                                                     (return-from "word-loop-backward" 'obp))
+                                                                                    ((let ((ms (loop for w in words
+                                                                                                     if (progn (goto-char last-backward-match)
+                                                                                                               (continue-re-search-backward (regexp-quote w) nil t nil t))
+                                                                                                     collect (point))))
+                                                                                       (when ms
+                                                                                         (goto-char (car (sort ms (lambda (a b) (< (abs (- a point)) (abs (- b point)))))))
+                                                                                         t
+                                                                                         ))
+                                                                                     (return-from "word-loop-backward" 'match))
+                                                                                    (t (goto-char last-backward-match))))))
+                                                          (cond ((eq obp-or-match 'match)
+                                                                 (progn
+                                                                   (setq last-backward-match (point-at-bol)
+                                                                         direction 'forward)
+                                                                   (setq cache (append cache `(,(point-at-bol))))
+                                                                   (setq last-cache-pos (- (length cache) 1))
+                                                                   (point-at-bol)))
+                                                                ((eq obp-or-match 'obp)
+                                                                 (progn
+                                                                   (setq last-backward-match 'finished)
+                                                                   (setq cache (append cache '(bobp)))
+                                                                   (setq last-cache-pos (- (length cache) 1))
+                                                                   'bobp))
+                                                                (t
+                                                                 (progn
+                                                                   (setq last-backward-match 'finished))))))
+                                                       (t (progn
+                                                            (setq last-cache-pos 0)
+                                                            nil)))))
+                                    ;; save the token-search-state in hashtables
+                                    (puthash tok last-forward-match token-last-forward-match)
+                                    (puthash tok last-backward-match token-last-backward-match)
+                                    (puthash tok direction token-direction)
+                                    (puthash tok cache token-cache)
+                                    (puthash tok last-cache-pos token-cache-pos)
+                                    (if (eq result 'finished)
+                                        (token-next-match tok)
+                                      result)
+                                    )))
+        (let* ((pivot-token (car matching-order))
+               (first-match (token-next-match pivot-token)))
+          ;; only if there are matches for the pivot line and tokens for
+          ;; other matches are still available (other than the first one which
+          ;; we use as pivot) do the main comparing
+          (cond ((and first-match
+                      (cdr matching-order))
+                 ;; MAINLOOP
+                 ;; gathering matches, normalizing and comparing them
+                 (let ((results nil)
+                       (counter 0))
+                   (cl-flet ((normalize (m tok)
+                                        (let ((d (match-token-difference tok pivot-token)))
+                                          (save-excursion
+                                            (cond ((eq m 'eobp)
+                                                   (save-excursion (goto-char (point-max)) (point-at-bol)))
+                                                  ((eq m 'bobp)
+                                                   (point-min))
+                                                  (t
+                                                   (goto-char m)
+                                                   (loop for i from 0 to (- (abs d) 1)
+                                                         do (if (< d 0)
+                                                                (progn
+                                                                  (continue-next-line))
+                                                              (progn
+                                                                (continue-previous-line))))
+                                                   (point-at-bol)))))))
+                     (block "match-testing-loop"
+                       (let (tm done-first)
+                         (while (setq tm (or (unless done-first
+                                               (setq done-first first-match))
+                                             (token-next-match pivot-token)))
+                           (let ((tm-score 1))
+                             (dolist (against-token (cdr matching-order))
+                               (block "against-match-testing-loop"
+                                 (let ((am (token-next-match against-token)))
+                                   (if am
+                                       (let ((am-normalized (normalize am against-token)))
+                                         (when (= tm am-normalized)
+                                           (setq tm-score (+ tm-score 1))
+                                           (return-from "against-match-testing-loop" t)))
+                                     (return-from "against-match-testing-loop" t)))))
+                             (setq results (append results `((,tm-score . ,tm))))
+                             ;; go fast rather than correct if there are many matches
+                             ;; tweak mainloop breaking here for snappier behaviour in edge cases
+                             (when (or (= tm-score (length matching-order))
+                                       (> counter 100)
+                                       (and (> counter 10)
+                                            (>= tm-score (+ (/ (length matching-order) 2) 1)))
+                                       )
+                               (return-from "match-testing-loop" t))
+                             (setq counter (+ counter 1))))))
+                     ;; sort matches by their score, and if score is equal sort by distance from sourcemarker center point (smaller is better)
+                     (let* ((final-result (car (sort results (lambda (a b) (cond ((> (car a) (car b))
+                                                                                  t)
+                                                                                 ((= (car a) (car b))
+                                                                                  (if (< (abs (- point (cdr a))) (abs (- point (cdr b))))
+                                                                                      t
+                                                                                    nil)))))))
+                            (final-score (car final-result))
+                            (final-match (cdr final-result)))
+                       ;; recur without pivot element if final score is too low, hoping that we will find a better match
+                       (if (and last-final-score
+                                (>= last-final-score final-score))
+                           ;; previous recursion steps score looked better, just return nil so calling function returns
+                           ;; final-match instead of recur-match
+                           nil
+                         (if (and (< final-score (+ (/ (length matching-order) 2) 1))
+                                  (> (length (cdr matching-order)) 1)
+                                  (not last-final-score))
+                             (let ((recur-match (continue-sourcemarker-regexp-search2 smarker (cdr matching-order) final-score `((:token-cache . ,token-cache)
+                                                                                                                                 (:token-cache-pos . ,(maphash (lambda (k v) 0) token-cache-pos))
+                                                                                                                                 ))))
+                               ;; if recursion yields nothing return final-score
+                               ;; unless final-score is 1 then retun nil
+                               (or recur-match
+                                   (unless (< final-score (+ (/ (length matching-order) 2) 1))
+                                     final-match)))
+                           (unless (< final-score (+ (/ (length matching-order) 2) 1))
+                             final-match)))
+                       ))))
+                ;; END OF MAINLOOP
+                ;;
+                ;; when we only have matches for the pivot line, but no other matches to
+                ;; compare with, then just return the first match for the pivot line
+                ((and first-match
+                      (not (cdr matching-order)))
+                 (unless (> last-final-score 1)
+                   first-match))
+                ;; when there are no matches for the pivot line but (potentially) other
+                ;; matches for the rest of the matching order, call this function recursivly
+                ;; with the first token of the matching order (the current pivot) stripped
+                ;; from the matching order
+                ((and (not first-match)
+                      (cdr matching-order)
+                      (> (length (cdr matching-order)) 1)
+                      (not last-final-score))
+                 (continue-sourcemarker-regexp-search2 smarker (cdr matching-order) nil `((:token-cache . ,token-cache)
+                                                                                          (:token-cache-pos . ,(maphash (lambda (k v) 0) token-cache-pos))
+                                                                                          )))
+                ;; we failed to find anything at all
+                (t nil)))))))
 
-(defun test-regexp-search ()
-  (interactive)
-  (print (gethash (buffer-file-name (current-buffer)) continue-db))
-  (let ((p (or (continue-sourcemarker-regexp-search (gethash (buffer-file-name (current-buffer)) continue-db)) (point-min))))
-    (print p)
-    (goto-char p)))
+;; (defun test-regexp-search ()
+;;   (interactive)
+;;   (print (gethash (buffer-file-name (current-buffer)) continue-db))
+;;   (let ((p (or (continue-sourcemarker-regexp-search2 (gethash (file-truename (buffer-file-name (current-buffer))) continue-db)) (point-min))))
+;;     (print p)
+;;     (goto-char p)))
 
 
 
@@ -737,7 +789,8 @@ See alse `continue-sourcemarker-visit'."
           (org-save-outline-visibility nil
             (show-all)
             (goto-char (or (continue-sourcemarker-simple-search m)
-                           (continue-sourcemarker-regexp-search m)
+                           (continue-sourcemarker-line-score-search m)
+                           (continue-sourcemarker-regexp-search2 m)
                            (point-min)))
             (add-to-list 'matches (point))))))))
 
