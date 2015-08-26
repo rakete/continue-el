@@ -401,7 +401,7 @@ See also `continue-sourcemarker-restore'"
                 (line-words+2 (elt lines-vector (- n 0))))
             (dolist (w above-words-2)
               (when (position w line-words-2 :test 'equal)
-                (setq score (+ score 8))))
+                (setq score (+ score 6))))
             (dolist (w above-words-1)
               (when (position w line-words-1 :test 'equal)
                 (setq score (+ score 10))))
@@ -413,7 +413,7 @@ See also `continue-sourcemarker-restore'"
                 (setq score (+ score 10))))
             (dolist (w below-words+2)
               (when (position w line-words+2 :test 'equal)
-                (setq score (+ score 8))))
+                (setq score (+ score 6))))
             ;;(setf (elt scores-vector (- n 2)) score)
             (when (> score high-score)
               (setq high-score score
@@ -785,7 +785,8 @@ See alse `continue-sourcemarker-visit'."
   (save-excursion
     (let ((matches nil))
       (dolist (m (if (continue-sourcemarker-p ms) (list ms) ms) (if (continue-sourcemarker-p ms) (car matches) matches))
-        (with-current-buffer (find-file-noselect (cdr (assoc :file m)))
+        (with-current-buffer (or (find-buffer-visiting (cdr (assoc :file m)))
+                                 (find-file-noselect (cdr (assoc :file m))))
           (org-save-outline-visibility nil
             (show-all)
             (goto-char (or (continue-sourcemarker-simple-search m)
@@ -799,8 +800,8 @@ See alse `continue-sourcemarker-visit'."
 visiting the point returned by `continue-sourcemarker-restore',
 not displaying the buffer."
   (let* ((m (continue-sourcemarker-restore smarker))
-         (buf (find-file-noselect (cdr (assoc :file smarker))))
-         (oldframe (selected-frame)))
+         (buf (or (find-buffer-visiting (cdr (assoc :file smarker)))
+                  (find-file-noselect (cdr (assoc :file smarker))))))
     (when m
       (when (get-buffer-window (get-buffer buf) 'visible)
         (select-frame (window-frame (get-buffer-window (get-buffer buf) 'visible))))
@@ -882,7 +883,8 @@ and restore associated sourcemarker, if any."
   (interactive)
   (unless (boundp 'continue-prevent-restore)
     (let ((buf (or (and filename
-                        (find-file-noselect filename))
+                        (or (find-buffer-visiting filename)
+                            (find-file-noselect filename)))
                    (current-buffer))))
       (unless (some (lambda (re) (string-match re (buffer-name buf))) continue-prevent-regexps)
         (with-current-buffer buf
