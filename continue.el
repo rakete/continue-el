@@ -898,6 +898,8 @@ and restore associated sourcemarker, if any."
                 (org-reveal))
               (point-marker))))))))
 
+(defvar continue-idle-timer-write-db nil)
+
 (eval-after-load "continue"
   '(progn
      (continue-load-db)
@@ -914,7 +916,7 @@ and restore associated sourcemarker, if any."
      ;;                                                        (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
      ;;                                             (with-current-buffer buf
      ;;                                               (puthash filename (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))))))))
-     (run-with-idle-timer 120 t 'continue-write-db)
+     (setq continue-idle-timer-write-db (run-with-idle-timer 4 t 'continue-write-db))
      ))
 
 (provide 'continue)
