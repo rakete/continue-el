@@ -14,7 +14,7 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-(require 'cl)
+(require 'cl-lib)
 
 ;; I have a bad feeling about this...
 (condition-case nil (require 'org) (error (defalias 'org-save-outline-visibility 'progn)))
@@ -24,8 +24,8 @@
          (n (- (length lists) 1))
          (i 0)
          (rs '()))
-    (while (some 'identity (mapcar (lambda (l) (> (length l) i)) lists))
-      (setq rs (append rs (list (loop for m from 0 to n
+    (while (cl-some 'identity (mapcar (lambda (l) (> (length l) i)) lists))
+      (setq rs (append rs (list (cl-loop for m from 0 to n
                                       collect (nth i (nth m lists))))))
       (setq i (1+ i)))
     rs))
@@ -70,7 +70,7 @@ See also `continue-ignore-word-p', `continue-previous-line',
   (save-excursion
     (beginning-of-line)
     (or (looking-at "^\\s-*$")
-        (= (length (remove-if (lambda (w) (continue-ignore-word-p w min-length))
+        (= (length (cl-remove-if (lambda (w) (continue-ignore-word-p w min-length))
                               (split-string (buffer-substring (point-at-bol) (point-at-eol)) " " t))) 0))))
 
 
@@ -267,10 +267,10 @@ Sourcemarker data structure layout:
                        (cl-flet ((collect-up (m) (save-excursion
                                                 (reverse
                                                  ;; arg m is number of lines to collect
-                                                 (loop for i from 1 to m
+                                                 (cl-loop for i from 1 to m
                                                        collect (continue-previous-line-string)))))
                               (collect-down (m) (save-excursion
-                                                  (loop for i from 1 to m
+                                                  (cl-loop for i from 1 to m
                                                         collect (continue-next-line-string)))))
                          (let ((above (collect-up n))
                                (below (collect-down n))
@@ -429,7 +429,7 @@ See also `continue-sourcemarker-restore'"
 
 ;; (goto-char (continue-sourcemarker-line-score-search (gethash (file-truename (buffer-file-name (current-buffer))) continue-db)))
 
-(defun* continue-sourcemarker-regexp-search2 (smarker &optional (matching-order '((:lines-center)
+(cl-defun continue-sourcemarker-regexp-search2 (smarker &optional (matching-order '((:lines-center)
                                                                                   (:lines-above . 1)
                                                                                   (:lines-below . 1)
                                                                                   (:lines-above . 2)
@@ -514,7 +514,7 @@ See also `continue-sourcemarker-restore'."
                                 ((eq (car tok) :lines-above)
                                  (nth (- (cdr tok) 1) (reverse (cdr (assoc (car tok) smarker)))))))
               (line-to-words (line)
-                             (remove-if 'continue-ignore-word-p
+                             (cl-remove-if 'continue-ignore-word-p
                                         (split-string line " " t)))
               (match-token-difference (a b)
                                       ;; given two tokens a and b find the number of line jumps it would
@@ -572,11 +572,11 @@ See also `continue-sourcemarker-restore'."
                                                         ;; pick the match closest to smarker point
                                                         ;; special case if eobp or bobp, return 'eobp/'bobp instead of match,
                                                         ;; receiver has to handle that
-                                                        (let ((obp-or-match (block "word-loop-forward"
+                                                        (let ((obp-or-match (cl-block "word-loop-forward"
                                                                               (cond ((and (= (length words) 1)
                                                                                           (string-equal (car words) "#eobp#"))
-                                                                                     (return-from "word-loop-forward" 'obp))
-                                                                                    ((let ((ms (loop for w in words
+                                                                                     (cl-return-from "word-loop-forward" 'obp))
+                                                                                    ((let ((ms (cl-loop for w in words
                                                                                                      if (progn (goto-char last-forward-match)
                                                                                                                (continue-re-search-forward (regexp-quote w) nil t nil t))
                                                                                                      collect (point))))
@@ -584,7 +584,7 @@ See also `continue-sourcemarker-restore'."
                                                                                          (goto-char (car (sort ms (lambda (a b) (< (abs (- a point)) (abs (- b point)))))))
                                                                                          t
                                                                                          ))
-                                                                                     (return-from "word-loop-forward" 'match))
+                                                                                     (cl-return-from "word-loop-forward" 'match))
                                                                                     (t (goto-char last-forward-match))))))
                                                           ;; obp-or-match will either
                                                           ;; 'match: at (point) is a match
@@ -610,11 +610,11 @@ See also `continue-sourcemarker-restore'."
                                                        ((and (or (eq direction 'backward)
                                                                  (eq last-forward-match 'finished))
                                                              (not (eq last-backward-match 'finished)))
-                                                        (let ((obp-or-match (block "word-loop-backward"
+                                                        (let ((obp-or-match (cl-block "word-loop-backward"
                                                                               (cond ((and (= (length words) 1)
                                                                                           (string-equal (car words) "#bobp#"))
-                                                                                     (return-from "word-loop-backward" 'obp))
-                                                                                    ((let ((ms (loop for w in words
+                                                                                     (cl-return-from "word-loop-backward" 'obp))
+                                                                                    ((let ((ms (cl-loop for w in words
                                                                                                      if (progn (goto-char last-backward-match)
                                                                                                                (continue-re-search-backward (regexp-quote w) nil t nil t))
                                                                                                      collect (point))))
@@ -622,7 +622,7 @@ See also `continue-sourcemarker-restore'."
                                                                                          (goto-char (car (sort ms (lambda (a b) (< (abs (- a point)) (abs (- b point)))))))
                                                                                          t
                                                                                          ))
-                                                                                     (return-from "word-loop-backward" 'match))
+                                                                                     (cl-return-from "word-loop-backward" 'match))
                                                                                     (t (goto-char last-backward-match))))))
                                                           (cond ((eq obp-or-match 'match)
                                                                  (progn
@@ -673,28 +673,28 @@ See also `continue-sourcemarker-restore'."
                                                    (point-min))
                                                   (t
                                                    (goto-char m)
-                                                   (loop for i from 0 to (- (abs d) 1)
+                                                   (cl-loop for i from 0 to (- (abs d) 1)
                                                          do (if (< d 0)
                                                                 (progn
                                                                   (continue-next-line))
                                                               (progn
                                                                 (continue-previous-line))))
                                                    (point-at-bol)))))))
-                     (block "match-testing-loop"
+                     (cl-block "match-testing-loop"
                        (let (tm done-first)
                          (while (setq tm (or (unless done-first
                                                (setq done-first first-match))
                                              (token-next-match pivot-token)))
                            (let ((tm-score 1))
                              (dolist (against-token (cdr matching-order))
-                               (block "against-match-testing-loop"
+                               (cl-block "against-match-testing-loop"
                                  (let ((am (token-next-match against-token)))
                                    (if am
                                        (let ((am-normalized (normalize am against-token)))
                                          (when (= tm am-normalized)
                                            (setq tm-score (+ tm-score 1))
-                                           (return-from "against-match-testing-loop" t)))
-                                     (return-from "against-match-testing-loop" t)))))
+                                           (cl-return-from "against-match-testing-loop" t)))
+                                     (cl-return-from "against-match-testing-loop" t)))))
                              (setq results (append results `((,tm-score . ,tm))))
                              ;; go fast rather than correct if there are many matches
                              ;; tweak mainloop breaking here for snappier behaviour in edge cases
@@ -703,7 +703,7 @@ See also `continue-sourcemarker-restore'."
                                        (and (> counter 10)
                                             (>= tm-score (+ (/ (length matching-order) 2) 1)))
                                        )
-                               (return-from "match-testing-loop" t))
+                               (cl-return-from "match-testing-loop" t))
                              (setq counter (+ counter 1))))))
                      ;; sort matches by their score, and if score is equal sort by distance from sourcemarker center point (smaller is better)
                      (let* ((final-result (car (sort results (lambda (a b) (cond ((> (car a) (car b))
@@ -870,7 +870,7 @@ put it into `continue-db'."
                  (zeitgeist-prevent-send t))
             (when filename
               (unless (and (buffer-file-name buf)
-                           (some (lambda (re) (or (string-match re (buffer-file-name buf))
+                           (cl-some (lambda (re) (or (string-match re (buffer-file-name buf))
                                                   (string-match re (file-truename (buffer-file-name buf))))) continue-db-ignore))
                 (with-current-buffer buf
                   (puthash (file-truename filename) (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))))))))))
@@ -886,7 +886,7 @@ and restore associated sourcemarker, if any."
                         (or (find-buffer-visiting filename)
                             (find-file-noselect filename)))
                    (current-buffer))))
-      (unless (some (lambda (re) (string-match re (buffer-name buf))) continue-prevent-regexps)
+      (unless (cl-some (lambda (re) (string-match re (buffer-name buf))) continue-prevent-regexps)
         (with-current-buffer buf
           (let* ((filename (buffer-file-name buf))
                  (smarker (when filename
@@ -913,7 +913,7 @@ and restore associated sourcemarker, if any."
      ;;                                              (filename (buffer-file-name buf)))
      ;;                                         (when filename
      ;;                                           (unless (and (buffer-file-name buf)
-     ;;                                                        (some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
+     ;;                                                        (cl-some (lambda (re) (string-match re (buffer-file-name buf))) continue-db-ignore))
      ;;                                             (with-current-buffer buf
      ;;                                               (puthash filename (continue-sourcemarker-create) (symbol-value (intern-soft continue-db-symbol))))))))))
      (setq continue-idle-timer-write-db (run-with-idle-timer 4 t 'continue-write-db))
