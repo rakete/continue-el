@@ -17,7 +17,12 @@
 (require 'cl-lib)
 
 ;; I have a bad feeling about this...
-(condition-case nil (require 'org) (error (defalias 'org-save-outline-visibility 'progn)))
+;; (condition-case nil (require 'org-compat) (error (defalias 'org-save-outline-visibility 'progn)))
+(defun org-compat-save-outline (use-markers &rest body)
+  (if (and (fboundp 'org-element-type)
+           (fboundp 'org-save-outline-visibility))
+      (org-save-outline-visibility use-markers body)
+    (progn body)))
 
 (defun continue-zip (&rest lists)
   (let* (;;(lists (append (list a) rest))
@@ -29,14 +34,6 @@
                                       collect (nth i (nth m lists))))))
       (setq i (1+ i)))
     rs))
-
-
-
-
-
-
-
-
 
 (defun continue-sourcemarker-p (smarker)
   "Test if SMARKER is a sourcemarker."
@@ -234,7 +231,7 @@ Sourcemarker data structure layout:
       (save-window-excursion
         (save-excursion
           (save-restriction
-            (org-save-outline-visibility t
+            (org-compat-save-outline t
               (show-all)
               ;; return nil if the buffer is not big enough for a mark
               (cond ((save-excursion
@@ -787,7 +784,7 @@ See alse `continue-sourcemarker-visit'."
       (cl-dolist (m (if (continue-sourcemarker-p ms) (list ms) ms) (if (continue-sourcemarker-p ms) (car matches) matches))
         (with-current-buffer (or (find-buffer-visiting (cdr (assoc :file m)))
                                  (find-file-noselect (cdr (assoc :file m))))
-          (org-save-outline-visibility nil
+          (org-compat-save-outline nil
             (show-all)
             (goto-char (or (continue-sourcemarker-simple-search m)
                            (continue-sourcemarker-line-score-search m)
@@ -864,7 +861,7 @@ put it into `continue-db'."
   (unless (boundp 'continue-prevent-save)
     (save-window-excursion
       (save-restriction
-        (org-save-outline-visibility nil
+        (org-compat-save-outline nil
           (let* ((buf (or buf (current-buffer)))
                  (filename (buffer-file-name buf))
                  (zeitgeist-prevent-send t))
