@@ -851,7 +851,7 @@ into `continue-db'."
                    (insert (concat "(puthash " (prin1-to-string k) " '" (prin1-to-string v) " (symbol-value (intern-soft continue-db-symbol)))"))
                    (newline)))
                (symbol-value (intern-soft continue-db-symbol)))
-      (write-file continue-db-path)
+      (write-region (point-min) (point-max) continue-db-path nil 'quiet)
       )))
 
 (defun continue-save (&optional buf)
